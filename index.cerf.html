@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+<style>
+    body {
+        width: 35em;
+        margin: 0 auto;
+        font-family: Tahoma, Verdana, Arial, sans-serif;
+    }
+     .site-icon {
+    width: 16px; /* Adjust size as needed */
+    height: 16px;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+<h1>Cerf!</h1>
+
+<ul>
+  <li>
+    <img src="/icons/scanner.png" alt="Scanner Icon" class="site-icon">
+    <a href="/scanner/">Scanner files</a>
+  </li>
+  <li>
+    <img src="/icons/ha.ico" alt="Home Assistant Icon" class="site-icon">
+    <a href="http://cerf:8123/lovelace/0">Home Assistant</a>
+  </li>
+  <li>
+    <img src="/icons/bird.png" alt="Birdnet" class="site-icon">
+    <a href="http://birdnet/">Birdnet</a>
+  </li>
+  <li>
+    <img src="/icons/pihole.png" alt="Pi-Hole Icon" class="site-icon">
+    <a href="https://cerf:3143/admin/">Pi-Hole</a> (<a href="https://adblock-tester.com/">Test it!</a>)
+  </li>
+  <li>
+    <img src="/icons/lms.ico" alt="Squeeze server Icon" class="site-icon">
+    <a href="http://cerf:9000/">Squeeze server</a>
+  </li>
+  <li>
+    <img src="/icons/pdf.png" alt="PDF icon" class="site-icon">
+    <a href="http://cerf:8080/">PDF Editing</a>
+  </li>
+</ul>
+
+  <h2>Autres</h2>
+  <!-- Free icons:  https://www.flaticon.com/ -->
+<ul>
+	<li>
+		<img src="/icons/pfsense.png" alt="Pfsense Icon" class="site-icon">
+            <a href="https://192.168.1.1/">Firewall</a></li>
+	<li>
+		<img src="/icons/socket.png" alt="Socket Icon" class="site-icon">
+		<a href="http://admin:admin@outlet/index.asp">Outlet control</a></li>
+	<li>
+		<img src="/icons/cloudy.png" alt="Cloudy Icon" class="site-icon">
+		<a href="http://192.168.1.248/">AmbientWeather local unit</a> for WS-1550-IP (<a href="https://ambientweather.net/dashboard/755e6115dce3bc748a4a202b223d0a25">Dashboard</a>)</li>
+	<li>
+		<img src="/icons/wifi-router.png" alt="Router Icon" class="site-icon">
+		<a href="https://192.168.1.253/">OpenWRT bridge</a></li>
+	<li>
+		<img src="/icons/wifi-router.png" alt="Router Icon" class="site-icon">
+		<a href="https://192.168.1.21:11443/">Unifi UOS Server (on iveshall)</a>. To start, type "sudo uosserver start" and ensure that in Cockpit (<a href="https://localhost:9090/network">https://localhost:9090/network</a>) the firewall is disabled.</li>
+</ul>
+<p><em>Thank you for using nginx.</em></p>
+
+
+
+
+</body>
+</html>
