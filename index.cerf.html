@@ -1,19 +1,79 @@
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Welcome to nginx!</title>
 <style>
-    body {
-        width: 35em;
-        margin: 0 auto;
-        font-family: Tahoma, Verdana, Arial, sans-serif;
+    *, *::before, *::after {
+        box-sizing: border-box;
     }
-     .site-icon {
-    width: 16px; /* Adjust size as needed */
-    height: 16px;
-    margin-right: 5px;
-    vertical-align: middle;
-  }
+    body {
+        max-width: 35em;   /* was a fixed width; now it can shrink */
+        margin: 0 auto;
+        padding: 0 1em 2em;
+        font-family: Tahoma, Verdana, Arial, sans-serif;
+        line-height: 1.5;
+        -webkit-text-size-adjust: 100%;
+    }
+    h1 {
+        font-size: 1.75em;
+    }
+    h2 {
+        font-size: 1.25em;
+    }
+    a {
+        overflow-wrap: break-word;
+    }
+    .site-icon {
+        width: 1em;   /* scales with the surrounding text */
+        height: 1em;
+        margin-right: 0.35em;
+        vertical-align: middle;
+        object-fit: contain;
+    }
+    /* Font Awesome icons are glyphs, not images. font-size sets the glyph size, so
+       width/margin below are self-relative: 1em here == one icon-width of column. */
+    i.site-icon {
+        font-size: 1em;   /* same visual size as the raster icons above */
+        width: 1em;
+        height: auto;
+        margin-right: 0.35em;
+        display: inline-block;
+        text-align: center;
+    }
+
+    /* Phones and other narrow screens: roomier, easier-to-tap rows */
+    @media (max-width: 40em) {
+        body {
+            font-size: 1.05em;
+        }
+        .site-icon {
+            width: 1.4em;
+            height: 1.4em;
+            margin-right: 0.5em;
+        }
+        i.site-icon {
+            font-size: 1.4em;   /* keeps the glyph column aligned with the raster icons */
+            width: 1em;
+            margin-right: 0.36em;
+        }
+        ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        li {
+            padding: 0.55em 0;
+            border-bottom: 1px solid #ddd;
+        }
+        li:last-child {
+            border-bottom: none;
+        }
+        a {
+            display: inline-block;
+            padding: 0.15em 0;
+        }
+    }
 </style>
 <link rel="icon" type="image/png" href="/icons/deer.png">
 </head>
