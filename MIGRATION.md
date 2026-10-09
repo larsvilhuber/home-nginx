@@ -159,8 +159,13 @@ Finally, point the scanner (`192.168.1.231`) at this host's IP.
 
 ## Migration steps: Caddy (HTTPS proxy)
 
-Caddy is **not installed** here. The `caddy-root-ca.crt` in this folder is a stale copy
-from a previous installation.
+Caddy 2.6.2 is **installed and running** on the destination (installed 2026-10-09 from
+the Ubuntu `universe` package). The `caddy-root-ca.crt` in this folder was replaced with the
+new root CA. It is a modified tracked file; commit it.
+
+Status of the proxied backends here: `:443` (landing page) and `:8445` (Stirling PDF)
+return 200; `:5445` and `:9443` return 502 until their services (on `:5173` and `:9000`)
+are started.
 
 **Port 80 conflict:** nginx owns `:80`. By default Caddy also binds `:80` to redirect
 HTTP to HTTPS, which would collide with nginx and would also redirect the plain-HTTP
@@ -169,16 +174,15 @@ so nginx keeps `:80` and Caddy only serves `:443` and the extra ports.
 
 To install Caddy on Ubuntu 26.04:
 ```bash
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-    | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
-    | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update && sudo apt install caddy
+sudo apt install caddy
 ```
 
-Create `/etc/caddy/Caddyfile`, keeping only the blocks whose backends exist
-(`ss -tlnp` to check):
+Do **not** use the Caddy Cloudsmith apt repository from older instructions: it returned
+`402 Payment Required` on 2026-10-09 and breaks `apt update`. If you added it, remove
+`/etc/apt/sources.list.d/caddy-stable.list`.
+
+Create `/etc/caddy/Caddyfile` (all four blocks are active; a block whose backend is not
+running just returns 502):
 ```caddyfile
 {
     auto_https disable_redirects
@@ -190,19 +194,19 @@ oiseau {
     reverse_proxy localhost:80
 }
 
-# Stirling PDF: only if you re-enable it (container publishes 8980)
+# Stirling PDF (container publishes 8980)
 oiseau:8445 {
     tls internal
     reverse_proxy localhost:8980
 }
 
-# Image Editing: only if a service is listening on 5173
+# Image Editing (backend on 5173)
 oiseau:5445 {
     tls internal
     reverse_proxy localhost:5173
 }
 
-# Docker management (Portainer or similar): only if listening on 9000
+# Docker management (Portainer or similar, backend on 9000)
 oiseau:9443 {
     tls internal
     reverse_proxy localhost:9000
@@ -227,7 +231,9 @@ served over plain HTTP at `http://oiseau/caddy-root-ca.crt`, which works because
 keeps `:80` and nothing redirects it.
 
 `tls internal` issues certificates for the names in the Caddyfile. If the new server is
-not called `oiseau`, change the site names here and make local DNS resolve them.
+not called `oiseau`, change the site names here and make local DNS resolve them. This
+machine's hostname is `hibou`, and `oiseau` does **not** resolve here; point local DNS
+(or Pi-hole) at it, or the `https://oiseau:*` links will not load.
 
 ## Updating landing page links
 

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welcome to Hibou!</title>
+<style>
+    *, *::before, *::after {
+        box-sizing: border-box;
+    }
+    body {
+        max-width: 35em;   /* was a fixed width; now it can shrink */
+        margin: 0 auto;
+        padding: 0 1em 2em;
+        font-family: Tahoma, Verdana, Arial, sans-serif;
+        line-height: 1.5;
+        -webkit-text-size-adjust: 100%;
+    }
+    h1 {
+        font-size: 1.75em;
+    }
+    h2 {
+        font-size: 1.25em;
+    }
+    a {
+        overflow-wrap: break-word;
+    }
+    .site-icon {
+        width: 1em;   /* scales with the surrounding text */
+        height: 1em;
+        margin-right: 0.35em;
+        vertical-align: middle;
+        object-fit: contain;
+    }
+    /* Font Awesome icons are glyphs, not images. font-size sets the glyph size, so
+       width/margin below are self-relative: 1em here == one icon-width of column. */
+    i.site-icon {
+        font-size: 1em;   /* same visual size as the raster icons above */
+        width: 1em;
+        height: auto;
+        margin-right: 0.35em;
+        display: inline-block;
+        text-align: center;
+    }
+
+    /* Phones and other narrow screens: roomier, easier-to-tap rows */
+    @media (max-width: 40em) {
+        body {
+            font-size: 1.05em;
+        }
+        .site-icon {
+            width: 1.4em;
+            height: 1.4em;
+            margin-right: 0.5em;
+        }
+        i.site-icon {
+            font-size: 1.4em;   /* keeps the glyph column aligned with the raster icons */
+            width: 1em;
+            margin-right: 0.36em;
+        }
+        ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        li {
+            padding: 0.55em 0;
+            border-bottom: 1px solid #ddd;
+        }
+        li:last-child {
+            border-bottom: none;
+        }
+        a {
+            display: inline-block;
+            padding: 0.15em 0;
+        }
+    }
+</style>
+<link rel="icon" type="image/png" href="/icons/deer.png">
+</head>
+<body>
+<h1><img src="/icons/deer.png" class="site-icon">
+Cerf!</h1>
+
+<ul>
+  <li>
+    <img src="/icons/scanner.png" alt="Scanner Icon" class="site-icon">
+    <a href="/scanner/">Scanner files</a>
+  </li>
+  <li>
+    <img src="/icons/ha.ico" alt="Home Assistant Icon" class="site-icon">
+    <a href="http://cerf:8123/lovelace/0">Home Assistant</a>
+  </li>
+  <li>
+    <img src="/icons/pihole.png" alt="Pi-Hole Icon" class="site-icon">
+    <a href="https://hibou:3143/admin/">Pi-Hole</a> (<a href="https://adblock-tester.com/">Test it!</a>)
+  </li>
+  <li>
+    <img src="/icons/lms.ico" alt="Squeeze server Icon" class="site-icon">
+    <a href="http://cerf:9000/">Squeeze server</a>
+  </li>
+  <li>
+    <img src="/icons/pdf.png" alt="PDF icon" class="site-icon">
+    <a href="http://hibou:8980/">PDF Editing</a>
+  </li>
+	<li>
+		<img src="/icons/wifi-router.png" alt="Router Icon" class="site-icon">
+		<a href="https://hibou:11443/">Unifi UOS Server</a>
+	</li>
+</ul>
+
+  <h2>Autres</h2>
+  <!-- Free icons:  https://www.flaticon.com/ -->
+<ul>
+	<li>
+		<img src="/icons/pfsense.png" alt="Pfsense Icon" class="site-icon">
+            <a href="https://192.168.1.1/">Firewall</a></li>
+  <li>
+    <img src="/icons/bird.png" alt="Birdnet" class="site-icon">
+    <a href="https://birdnet.cloutier-vilhuber.net/">Birdnet</a>
+  </li>
+	<li>
+		<img src="/icons/socket.png" alt="Socket Icon" class="site-icon">
+		<a href="http://admin:admin@outlet/index.asp">Outlet control</a></li>
+	<li>
+		<img src="/icons/cloudy.png" alt="Cloudy Icon" class="site-icon">
+		<a href="http://192.168.1.248/">AmbientWeather local unit</a> for WS-1550-IP (<a href="https://ambientweather.net/dashboard/755e6115dce3bc748a4a202b223d0a25">Dashboard</a>)</li>
+	<li>
+		<img src="/icons/wifi-router.png" alt="Router Icon" class="site-icon">
+		<a href="https://192.168.1.253/">OpenWRT bridge</a></li>
+</ul>
+<h2>Ailleurs</h2>
+<ul>
+	<li>
+		<img src="/icons/bird.png" alt="Bird Icon"  class="site-icon">
+		<a href="https://oiseau/">Oiseau (et CV-AI)</a> (seulement avec Tailscale activé)</li>
+</ul>
+<p><em>Thank you for using nginx.</em></p>
+
+
+
+
+</body>
+</html>
