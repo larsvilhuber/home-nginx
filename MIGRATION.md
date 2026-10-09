@@ -199,6 +199,15 @@ returns 502:
 ```caddyfile
 {
     auto_https disable_redirects
+
+    # Unique CA names (see "Unique CA names" below)
+    pki {
+        ca local {
+            name "Hibou Local CA"
+            root_cn "Hibou Local CA - Root"
+            intermediate_cn "Hibou Local CA - Intermediate"
+        }
+    }
 }
 
 # Landing page (HTTPS on 443)
@@ -237,6 +246,24 @@ from the HTTPS redirect.
 Stirling PDF also publishes plain HTTP on `:8980`. That port is Docker's and is **not**
 redirected; use `https://hibou:8445/`. To close it, bind the container to loopback
 (`127.0.0.1:8980:8080` in its compose file).
+
+**Unique CA names.** Browsers key certificates by issuer name. Every Caddy install names
+its CA "Caddy Local Authority - ECC Intermediate" by default, so a second Caddy server
+(or an older install of this one) makes Firefox fail with
+`SEC_ERROR_BAD_SIGNATURE`: it builds the chain with the wrong intermediate that has the
+same name. The `pki` block above gives this server its own names. Any other Caddy server
+you connect to should do the same with different names. Changing the names after the
+fact needs a fresh CA:
+
+```bash
+sudo systemctl stop caddy
+sudo mv /var/lib/caddy/.local/share/caddy/pki /var/lib/caddy/.local/share/caddy/pki.old
+sudo mv /var/lib/caddy/.local/share/caddy/certificates /var/lib/caddy/.local/share/caddy/certificates.old
+sudo systemctl start caddy
+```
+
+then re-export the root cert (below) and re-import it on clients. The leaf certificates
+must be regenerated too, otherwise Caddy keeps serving the old ones.
 
 `tls internal` issues certificates for the names in the Caddyfile, so local DNS (or
 Pi-hole) must resolve `hibou` to this server for other clients.
