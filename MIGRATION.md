@@ -1,16 +1,14 @@
 # Web / nginx / Caddy Migration Guide
 
-**Source server:** `oiseau` (Ubuntu 24.x)
-**Target server:** Ubuntu 26.04
+**Source server:** `cerf`
+**Target server:** `hibou` (Ubuntu 26.04)
 **Last updated:** 2026-10-09
 
 ## Overview
 
-`oiseau` serves a static landing page (`/home/www/`) with nginx on port 80. Caddy is
-described in `README.md` as the HTTPS termination layer for the other services, but
-**Caddy is not installed** on the machine this guide was last checked against (no
-`caddy` binary, no `/etc/caddy`). The landing page links to `https://oiseau:*` ports
-that Caddy used to proxy.
+`hibou` serves a static landing page (`/home/www/`, `index.hibou.html`) with nginx and
+terminates HTTPS with Caddy for the other services. `oiseau` is a separate server with
+its own page (`index.oiseau.html`); nothing on `hibou` serves or proxies it.
 
 Verified on the machine where this guide was last updated (2026-10-09):
 
@@ -20,8 +18,8 @@ Verified on the machine where this guide was last updated (2026-10-09):
 - Listening services: Stirling PDF container on `:8980` (the "PDF editing suite" was
   deactivated for RAM reasons per git history, so decide whether you want it),
   Pi-hole on `:3140`/`:3143`, vsftpd on `:21`, Samba on `:139`/`:445`.
-- Nothing is listening on `:5173` or `:9000`, so the Image Editing and Docker
-  management proxies have no backend here.
+- Nothing is listening on `:9000`, so the Docker management proxy has no backend here.
+  Image Editing (`:5445`/`:5173`) has been retired and removed everywhere.
 - `/home/ftpuser/files/` did not exist on the destination; it was created and the `ftp`
   user's home was moved to `/home/ftpuser` (see "Scanner drop folder"). vsftpd is
   configured for anonymous uploads as on the old system (restart pending).
@@ -30,9 +28,10 @@ Verified on the machine where this guide was last updated (2026-10-09):
 
 | File | Purpose |
 |------|---------|
-| `index.html` | Active landing page (gitignored; copy of `index.oiseau.html`) |
-| `index.oiseau.html` | Landing page for `oiseau` server |
-| `index.cerf.html` | Landing page for `cerf` server (Tailscale-accessible) |
+| `index.html` | Active landing page (gitignored; copy of `index.hibou.html`) |
+| `index.hibou.html` | Landing page for `hibou` (this server) |
+| `index.oiseau.html` | Landing page for the separate `oiseau` server |
+| `index.cerf.html` | Landing page for the `cerf` server (Tailscale-accessible) |
 | `index.cv-ai.html` | CV/AI variant |
 | `caddy-root-ca.crt` | Caddy internal CA certificate for client installs (stale) |
 | `icons/` | Icons for landing page |
@@ -61,19 +60,34 @@ rsync -av --exclude gs/ /home/www/ vilhuber@NEW_SERVER:/home/www/
 
 ```bash
 # 4. Set the active landing page (new server)
-cp /home/www/index.oiseau.html /home/www/index.html
+cp /home/www/index.hibou.html /home/www/index.html
 
 # 5. Back up and replace the default site
 sudo cp /etc/nginx/sites-available/default /etc/nginx/sites-available/default.bak
 sudoedit /etc/nginx/sites-available/default   # sites-enabled/default is a symlink to this
 ```
 
-Replace the contents with:
+Replace the contents with. Port 80 only redirects to HTTPS (except the CA cert, which
+clients must be able to fetch before they trust Caddy). The real content is served on an
+internal loopback port that Caddy proxies to; proxying to :80 would loop forever.
+
 ```nginx
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
+    server_name _;
 
+    location = /caddy-root-ca.crt {
+        root /home/www/;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 127.0.0.1:8081;
     root /home/www/;
     index index.html;
     server_name _;
@@ -161,16 +175,14 @@ Finally, point the scanner (`192.168.1.231`) at this host's IP.
 
 Caddy 2.6.2 is **installed and running** on the destination (installed 2026-10-09 from
 the Ubuntu `universe` package). The `caddy-root-ca.crt` in this folder was replaced with the
-new root CA. It is a modified tracked file; commit it.
+new root CA (already committed).
 
 Status of the proxied backends here: `:443` (landing page) and `:8445` (Stirling PDF)
-return 200; `:5445` and `:9443` return 502 until their services (on `:5173` and `:9000`)
-are started.
+return 200; `:9443` returns 502 until its service (on `:9000`) is started.
 
-**Port 80 conflict:** nginx owns `:80`. By default Caddy also binds `:80` to redirect
-HTTP to HTTPS, which would collide with nginx and would also redirect the plain-HTTP
-download of the CA cert. The Caddyfile below therefore sets `auto_https disable_redirects`
-so nginx keeps `:80` and Caddy only serves `:443` and the extra ports.
+**Port 80:** nginx owns `:80` and does the HTTP-to-HTTPS redirect (see the nginx section).
+Caddy's own redirects are disabled with `auto_https disable_redirects`, and it proxies the
+landing page to nginx's internal `127.0.0.1:8081`, not `:80`.
 
 To install Caddy on Ubuntu 26.04:
 ```bash
@@ -181,40 +193,32 @@ Do **not** use the Caddy Cloudsmith apt repository from older instructions: it r
 `402 Payment Required` on 2026-10-09 and breaks `apt update`. If you added it, remove
 `/etc/apt/sources.list.d/caddy-stable.list`.
 
-Create `/etc/caddy/Caddyfile` (all four blocks are active; a block whose backend is not
-running just returns 502):
+Create `/etc/caddy/Caddyfile`. A block whose backend is not running just
+returns 502:
+
 ```caddyfile
 {
     auto_https disable_redirects
 }
 
-# Landing page (HTTPS on 443; plain HTTP stays with nginx on 80)
-oiseau {
+# Landing page (HTTPS on 443)
+hibou {
     tls internal
-    reverse_proxy localhost:80
+    reverse_proxy localhost:8081
 }
 
-# Stirling PDF (container publishes 8980)
-oiseau:8445 {
+# Stirling PDF
+hibou:8445 {
     tls internal
     reverse_proxy localhost:8980
 }
 
-# Image Editing (backend on 5173)
-oiseau:5445 {
-    tls internal
-    reverse_proxy localhost:5173
-}
-
-# Docker management (Portainer or similar, backend on 9000)
-oiseau:9443 {
+# Docker management
+hibou:9443 {
     tls internal
     reverse_proxy localhost:9000
 }
 ```
-
-If Caddy still fails to bind `:80`, move nginx to another port (e.g. `127.0.0.1:8081`),
-update the landing-page `reverse_proxy` target, and serve the CA cert from Caddy too.
 
 ```bash
 sudo caddy validate --config /etc/caddy/Caddyfile
@@ -227,24 +231,25 @@ sudo chmod 644 /home/www/caddy-root-ca.crt
 ```
 
 Clients must install the new CA cert (the old one is invalid after a reinstall). It is
-served over plain HTTP at `http://oiseau/caddy-root-ca.crt`, which works because nginx
-keeps `:80` and nothing redirects it.
+served over plain HTTP at `http://hibou/caddy-root-ca.crt`; nginx exempts that one path
+from the HTTPS redirect.
 
-`tls internal` issues certificates for the names in the Caddyfile. If the new server is
-not called `oiseau`, change the site names here and make local DNS resolve them. This
-machine's hostname is `hibou`, and `oiseau` does **not** resolve here; point local DNS
-(or Pi-hole) at it, or the `https://oiseau:*` links will not load.
+Stirling PDF also publishes plain HTTP on `:8980`. That port is Docker's and is **not**
+redirected; use `https://hibou:8445/`. To close it, bind the container to loopback
+(`127.0.0.1:8980:8080` in its compose file).
+
+`tls internal` issues certificates for the names in the Caddyfile, so local DNS (or
+Pi-hole) must resolve `hibou` to this server for other clients.
 
 ## Updating landing page links
 
-`index.oiseau.html` (and the active `index.html`) contains hardcoded addresses. After
-migration, update:
+`index.hibou.html` (and the active `index.html`) contains hardcoded addresses:
 
-- `https://192.168.1.231` (scanner IP): new IP, or keep if the scanner is unchanged
-- `https://oiseau:*` (5445, 8445, 9443): need local DNS for `oiseau` to point at the new
-  server, plus the matching Caddy blocks. Remove links whose service is gone (e.g. 8445
-  if Stirling stays off).
-- `http://oiseau:20211/`, `http://oiseau:8123/lovelace/0`: direct ports, no proxy;
-  depend on the services running on the new host
-- `https://pihole:3143/admin/`: relies on Pi-hole's hostname in local DNS
-- `https://192.168.1.1/`: router/firewall IP, update if changed
+- `https://hibou:8445/` (Stirling PDF), `https://hibou:3143/admin/` (Pi-hole),
+  `https://hibou:11443/` (Unifi): served by this host
+- `http://cerf:8123/lovelace/0` (Home Assistant) and `http://cerf:9000/` (Squeeze
+  server): still point at `cerf`; change them when those services move
+- `https://192.168.1.1/`, `https://192.168.1.253/`, `http://192.168.1.248/`: network
+  devices; update if their addresses change
+- `/scanner/`: the drop folder on this host (see "Scanner drop folder"); the scanner at
+  `192.168.1.231` must be pointed at this host's IP

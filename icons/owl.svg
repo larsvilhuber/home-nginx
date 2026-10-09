@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- ear tufts -->
+  <path d="M110 120 L150 40 L215 105 Z" fill="#6d4c35"/>
+  <path d="M402 120 L362 40 L297 105 Z" fill="#6d4c35"/>
+  <!-- body -->
+  <ellipse cx="256" cy="290" rx="190" ry="200" fill="#8b5e3c"/>
+  <!-- belly -->
+  <ellipse cx="256" cy="340" rx="120" ry="140" fill="#e8d3b0"/>
+  <path d="M200 300 q12 14 24 0 M256 300 q12 14 24 0 M228 345 q12 14 24 0 M284 345 q12 14 24 0 M200 390 q12 14 24 0 M256 390 q12 14 24 0 M312 300 q12 14 24 0 M176 345 q12 14 24 0" stroke="#b9956a" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <!-- wings -->
+  <path d="M75 280 Q50 400 140 470 Q150 360 120 270 Z" fill="#6d4c35"/>
+  <path d="M437 280 Q462 400 372 470 Q362 360 392 270 Z" fill="#6d4c35"/>
+  <!-- eyes -->
+  <circle cx="180" cy="200" r="72" fill="#f5ead6"/>
+  <circle cx="332" cy="200" r="72" fill="#f5ead6"/>
+  <circle cx="180" cy="200" r="72" fill="none" stroke="#6d4c35" stroke-width="12"/>
+  <circle cx="332" cy="200" r="72" fill="none" stroke="#6d4c35" stroke-width="12"/>
+  <circle cx="186" cy="204" r="34" fill="#f2a900"/>
+  <circle cx="326" cy="204" r="34" fill="#f2a900"/>
+  <circle cx="188" cy="205" r="18" fill="#1d1d1d"/>
+  <circle cx="324" cy="205" r="18" fill="#1d1d1d"/>
+  <circle cx="196" cy="196" r="6" fill="#fff"/>
+  <circle cx="332" cy="196" r="6" fill="#fff"/>
+  <!-- beak -->
+  <path d="M232 240 L280 240 L256 292 Z" fill="#f2a900"/>
+  <!-- feet -->
+  <path d="M190 480 l-12 22 M190 480 l10 24 M190 480 l-26 14 M322 480 l12 22 M322 480 l-10 24 M322 480 l26 14" stroke="#f2a900" stroke-width="12" stroke-linecap="round"/>
+</svg>
