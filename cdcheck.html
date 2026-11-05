@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CD Check</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --ok:#1b7f3b; --no:#b3261e; --warn:#9a6700; --acc:#2457d6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121214; --fg:#ececf1; --mut:#9a9aa6; --card:#1e1e22; --ok:#4cc26b; --no:#ff6b61; --warn:#e3b341; --acc:#7ea2ff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  .sub { color:var(--mut); font-size:.85rem; margin-bottom:12px; }
+  video { width:100%; max-height:40vh; background:#000; border-radius:10px; display:none; object-fit:cover; }
+  .row { display:flex; gap:8px; margin:10px 0; }
+  input[type=text], input[type=search] { flex:1; min-width:0; padding:10px; font-size:1rem; border:1px solid var(--mut); border-radius:8px; background:var(--bg); color:var(--fg); }
+  button { padding:10px 14px; font-size:1rem; border:0; border-radius:8px; background:var(--acc); color:#fff; }
+  button.sec { background:var(--card); color:var(--fg); }
+  .card { background:var(--card); border-radius:10px; padding:12px; margin:10px 0; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:99px; font-weight:600; font-size:.85rem; color:#fff; }
+  .have { background:var(--ok); } .miss { background:var(--no); } .maybe { background:var(--warn); }
+  .t { font-weight:600; } .m { color:var(--mut); font-size:.85rem; word-break:break-all; }
+  #status { color:var(--mut); font-size:.9rem; min-height:1.3em; }
+  ul { list-style:none; padding:0; margin:0; }
+  li { padding:6px 0; border-top:1px solid #8884; }
+  li:first-child { border-top:0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>CD Check</h1>
+  <div class="sub">Scan a CD barcode and see whether it is already in the Lyrion library.</div>
+
+  <video id="cam" playsinline muted></video>
+  <div class="row">
+    <button id="scan">Scan barcode</button>
+    <button id="stop" class="sec" style="display:none">Stop</button>
+  </div>
+  <form class="row" id="manual">
+    <input type="text" id="code" inputmode="numeric" placeholder="or type barcode digits">
+    <button>Look up</button>
+  </form>
+  <form class="row" id="textsearch">
+    <input type="search" id="q" placeholder="or search artist / album">
+    <button class="sec">Search</button>
+  </form>
+  <div id="status"></div>
+  <div id="out"></div>
+
+  <h2 style="font-size:1.05rem;margin-top:24px">This session</h2>
+  <ul id="hist"></ul>
+  <div class="row"><button class="sec" id="clear">Clear history</button><button class="sec" id="copy">Copy missing list</button></div>
+</main>
+
+<script>
+// Lyrion JSON-RPC is reached through a same-origin nginx proxy (no CORS headers upstream).
+const LMS = '/lms/jsonrpc.js';
+const MB  = 'https://musicbrainz.org/ws/2/release/';
+const MUSIC_ROOT = '/media/space2/music';   // host path of the library (mounted as /music in the container)
+
+const $ = id => document.getElementById(id);
+const status = t => $('status').textContent = t;
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function rpc(cmd) {
+  const r = await fetch(LMS, { method:'POST', body: JSON.stringify({ id:1, method:'slim.request', params:['', cmd] }) });
+  if (!r.ok) throw new Error('Lyrion HTTP ' + r.status);
+  return (await r.json()).result;
+}
+
+// ---------- normalisation / matching ----------
+function norm(s) {
+  return String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[\(\[][^\)\]]*(remaster|deluxe|edition|disc|cd|bonus|expanded|anniversary)[^\)\]]*[\)\]]/g, ' ')
+    .replace(/\b(disc|cd)\s*\d+\b/g, ' ')
+    .replace(/&/g, ' and ').replace(/^the\s+/, '')
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+}
+const tokens = s => new Set(norm(s).split(' ').filter(Boolean));
+function overlap(a, b) {            // share of the smaller token set found in the larger
+  const A = tokens(a), B = tokens(b); if (!A.size || !B.size) return 0;
+  let n = 0; for (const t of A) if (B.has(t)) n++;
+  return n / Math.min(A.size, B.size);
+}
+function score(want, have) {        // 0..1
+  const t = norm(want.title) === norm(have.album) ? 1 : overlap(want.title, have.album) * 0.9;
+  const a = !want.artist || /^various/i.test(have.artist) ? 0.7 : overlap(want.artist, have.artist);
+  return t * 0.7 + a * 0.3;
+}
+
+let LIB = null;
+async function library() {
+  if (LIB) return LIB;
+  status('Loading library list…');
+  const r = await rpc(['albums', 0, 5000, 'tags:ajlsy']);
+  LIB = r.albums_loop || [];
+  return LIB;
+}
+async function folderOf(albumId) {
+  const r = await rpc(['titles', 0, 1, 'album_id:' + albumId, 'tags:u']);
+  const u = r.titles_loop?.[0]?.url; if (!u) return '';
+  try {
+    const p = decodeURIComponent(u.replace(/^file:\/\//, '')).replace(/^\/music/, MUSIC_ROOT);
+    return p.substring(0, p.lastIndexOf('/'));
+  } catch { return ''; }
+}
+async function findInLibrary(want) {
+  const lib = await library();
+  const hits = lib.map(a => ({ a, s: score(want, a) })).filter(x => x.s >= 0.6)
+                  .sort((x, y) => y.s - x.s).slice(0, 5);
+  for (const h of hits) h.folder = await folderOf(h.a.id);
+  return hits;
+}
+
+// ---------- MusicBrainz ----------
+function barcodeVariants(c) {
+  const v = new Set([c]);
+  if (c.length === 12) v.add('0' + c);
+  if (c.length === 13 && c[0] === '0') v.add(c.slice(1));
+  return [...v];
+}
+async function mbLookup(code) {
+  const q = 'barcode:(' + barcodeVariants(code).join(' OR ') + ')';
+  const r = await fetch(MB + '?fmt=json&limit=10&query=' + encodeURIComponent(q));
+  if (!r.ok) throw new Error('MusicBrainz HTTP ' + r.status);
+  const j = await r.json();
+  return (j.releases || []).map(x => ({
+    title: x.title,
+    artist: (x['artist-credit'] || []).map(c => c.name + (c.joinphrase || '')).join(''),
+    date: x.date || '', country: x.country || '', id: x.id,
+    rgid: x['release-group']?.id
+  }));
+}
+
+// ---------- rendering ----------
+function render(heading, wants, results) {
+  let html = '';
+  wants.forEach((w, i) => {
+    const hits = results[i];
+    const best = hits[0];
+    const kind = best && best.s >= 0.85 ? 'have' : best ? 'maybe' : 'miss';
+    const label = { have:'In library', maybe:'Possible match', miss:'Not found' }[kind];
+    html += `<div class="card"><span class="badge ${kind}">${label}</span>
+      <div class="t">${esc(w.title)}</div><div class="m">${esc(w.artist)} ${esc(w.date)} ${esc(w.country)}</div>`;
+    if (hits.length) html += '<ul>' + hits.map(h =>
+      `<li><div class="t">${esc(h.a.album)} <span class="m">(${Math.round(h.s * 100)}%)</span></div>
+       <div class="m">${esc(h.a.artist)}${h.a.year ? ' · ' + h.a.year : ''}</div>
+       <div class="m">${esc(h.folder)}</div></li>`).join('') + '</ul>';
+    html += '</div>';
+  });
+  $('out').innerHTML = html || '<div class="card">Nothing to show.</div>';
+}
+
+// ---------- history ----------
+let HIST = [];
+try { HIST = JSON.parse(sessionStorage.getItem('cdcheck') || '[]'); } catch {}
+function saveHist() { try { sessionStorage.setItem('cdcheck', JSON.stringify(HIST)); } catch {} drawHist(); }
+function drawHist() {
+  $('hist').innerHTML = HIST.slice().reverse().map(h =>
+    `<li><span class="badge ${h.kind}">${h.kind === 'have' ? 'have' : h.kind === 'maybe' ? '?' : 'missing'}</span>
+     ${esc(h.title)} <span class="m">— ${esc(h.artist)} ${esc(h.code || '')}</span></li>`).join('');
+}
+function addHist(w, hits, code) {
+  const best = hits[0], kind = best && best.s >= 0.85 ? 'have' : best ? 'maybe' : 'miss';
+  HIST.push({ title: w.title, artist: w.artist, kind, code }); saveHist();
+}
+$('clear').onclick = () => { HIST = []; saveHist(); };
+$('copy').onclick = async () => {
+  const t = HIST.filter(h => h.kind !== 'have').map(h => `${h.artist} - ${h.title} (${h.code || ''})`).join('\n');
+  try { await navigator.clipboard.writeText(t); status('Copied.'); } catch { status(t || 'Nothing missing.'); }
+};
+
+// ---------- actions ----------
+async function checkBarcode(code) {
+  code = code.replace(/\D/g, ''); if (!code) return;
+  $('out').innerHTML = '';
+  try {
+    status('Looking up ' + code + ' on MusicBrainz…');
+    const wants = await mbLookup(code);
+    if (!wants.length) { status('Barcode ' + code + ' not in MusicBrainz. Try the text search below.'); return; }
+    // different pressings of the same album are duplicates: keep one per title+artist
+    const seen = new Set(), uniq = wants.filter(w => { const k = norm(w.title) + '|' + norm(w.artist); if (seen.has(k)) return false; seen.add(k); return true; });
+    status('Checking library…');
+    const results = [];
+    for (const w of uniq) results.push(await findInLibrary(w));
+    render(code, uniq, results);
+    addHist(uniq[0], results[0], code);
+    status('Barcode ' + code);
+  } catch (e) { status('Error: ' + e.message); }
+}
+async function checkText(q) {
+  $('out').innerHTML = '';
+  try {
+    const lib = await library();
+    const n = norm(q), toks = n.split(' ').filter(Boolean);
+    const hits = lib.filter(a => { const h = norm(a.album + ' ' + a.artist); return toks.every(t => h.includes(t)); })
+                    .slice(0, 10).map(a => ({ a, s: 1 }));
+    for (const h of hits) h.folder = await folderOf(h.a.id);
+    render(q, [{ title: q, artist: '', date: '', country: '' }], [hits]);
+    status(hits.length + ' match(es)');
+  } catch (e) { status('Error: ' + e.message); }
+}
+
+$('manual').onsubmit = e => { e.preventDefault(); checkBarcode($('code').value); };
+$('textsearch').onsubmit = e => { e.preventDefault(); if ($('q').value.trim()) checkText($('q').value); };
+
+// ---------- camera scanning ----------
+let stream = null, timer = null;
+async function startScan() {
+  if (!window.isSecureContext) { status('Camera needs HTTPS (open https://hibou/cdcheck.html).'); return; }
+  let Det = window.BarcodeDetector;      // native in Chrome; Firefox needs the bundled ZXing fallback
+  if (!Det) {
+    try {
+      status('Loading barcode decoder…');
+      await new Promise((ok, bad) => { const s = document.createElement('script'); s.src = '/vendor/barcode-detector-3.2.3.js'; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
+      BarcodeDetectionAPI.setZXingModuleOverrides({ locateFile: (f, prefix) => f.endsWith('.wasm') ? '/vendor/zxing_reader.wasm' : prefix + f });
+      Det = BarcodeDetectionAPI.BarcodeDetector;
+    } catch (e) { status('Could not load barcode decoder. Type the digits instead.'); return; }
+  }
+  const det = new Det({ formats: ['ean_13', 'upc_a', 'ean_8', 'upc_e'] });
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+  } catch (e) { status('Camera error: ' + e.message); return; }
+  const v = $('cam'); v.srcObject = stream; v.style.display = 'block'; await v.play();
+  $('scan').style.display = 'none'; $('stop').style.display = '';
+  status('Point the camera at the barcode…');
+  timer = setInterval(async () => {
+    try {
+      const codes = await det.detect(v);
+      if (codes.length) { const c = codes[0].rawValue; stopScan(); if (navigator.vibrate) navigator.vibrate(60); $('code').value = c; checkBarcode(c); }
+    } catch {}
+  }, 250);
+}
+function stopScan() {
+  clearInterval(timer); timer = null;
+  if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
+  $('cam').style.display = 'none'; $('scan').style.display = ''; $('stop').style.display = 'none';
+}
+$('scan').onclick = startScan; $('stop').onclick = () => { stopScan(); status(''); };
+drawHist();
+</script>
+</body>
+</html>
