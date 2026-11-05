@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tag Review</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --ok:#1b7f3b; --no:#b3261e; --warn:#9a6700; --acc:#2457d6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121214; --fg:#ececf1; --mut:#9a9aa6; --card:#1e1e22; --ok:#4cc26b; --no:#ff6b61; --warn:#e3b341; --acc:#7ea2ff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  .sub { color:var(--mut); font-size:.85rem; margin-bottom:12px; }
+  .row { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; align-items:center; }
+  input[type=text], select { padding:9px; font-size:1rem; border:1px solid var(--mut); border-radius:8px; background:var(--bg); color:var(--fg); min-width:0; }
+  input[type=text] { flex:1; }
+  button { padding:10px 14px; font-size:1rem; border:0; border-radius:8px; background:var(--acc); color:#fff; cursor:pointer; }
+  button.sec { background:var(--card); color:var(--fg); }
+  button.bad { background:var(--no); }
+  button:disabled { opacity:.45; cursor:default; }
+  .card { background:var(--card); border-radius:10px; padding:12px; margin:10px 0; }
+  .t { font-weight:600; } .m { color:var(--mut); font-size:.85rem; word-break:break-all; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:.78rem; font-weight:600; color:#fff; background:var(--mut); margin-right:6px; }
+  .pill.medium { background:var(--warn); } .pill.low, .pill.no-candidate { background:var(--no); } .pill.guess { background:var(--acc); } .pill.done { background:var(--ok); }
+  .warn { color:var(--warn); font-weight:600; font-size:.9rem; margin-top:6px; }
+  .opts { display:flex; flex-direction:column; gap:8px; margin:10px 0; }
+  button.opt { display:block; width:100%; text-align:left; background:var(--bg); color:var(--fg); border:2px solid #8886; padding:9px 12px; }
+  button.opt[aria-checked=true] { border-color:var(--acc); background:color-mix(in srgb, var(--acc) 14%, var(--bg)); }
+  button.opt[aria-checked=true] .t::before { content:'\2713  '; color:var(--acc); }
+  .good { color:var(--ok); font-weight:600; } .off { color:var(--no); font-weight:600; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; font-size:.85rem; }
+  .cols ol { margin:2px 0 0; padding-left:1.6em; } .cols li { padding:1px 0; }
+  details summary { cursor:pointer; color:var(--mut); font-size:.9rem; }
+  #status { color:var(--mut); font-size:.9rem; min-height:1.3em; }
+  .btnrow { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; } .btnrow button { flex:1; min-width:110px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Tag Review</h1>
+  <div class="sub">Pick the right MusicBrainz release for albums the automatic match could not settle. Decisions are saved as you go; nothing touches your music files until you ask me to apply them.</div>
+  <div class="row">
+    <select id="filter" aria-label="Show">
+      <option value="todo">To review</option>
+      <option value="medium">Medium matches</option>
+      <option value="low">Low matches</option>
+      <option value="no-candidate">No candidate</option>
+      <option value="guess">Written as guesses</option>
+      <option value="done">Decided</option>
+    </select>
+    <span id="count" class="m"></span>
+  </div>
+  <div id="status"></div>
+  <div id="card"></div>
+</main>
+<script>
+const API = '/cdcheck-api/review/';
+const MB  = 'https://musicbrainz.org/ws/2/';
+let QUEUE = [], DEC = {}, VIEW = [], POS = 0, SEL = null, EXTRA = [];
+const $ = id => document.getElementById(id);
+const el = (tag, attrs = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) { if (k === 'class') e.className = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v); }
+  for (const k of kids.flat()) if (k != null) e.append(k.nodeType ? k : document.createTextNode(k));
+  return e;
+};
+const say = s => { $('status').textContent = s || ''; };
+const norm = s => String(s || '').normalize('NFKD').replace(/[^\w ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+// MusicBrainz allows ~1 request/second: serialize.
+let mbChain = Promise.resolve();
+function mb(path, params) {
+  const run = async () => {
+    await new Promise(r => setTimeout(r, 1100));
+    const u = new URL(MB + path); u.searchParams.set('fmt', 'json');
+    for (const [k, v] of Object.entries(params || {})) u.searchParams.set(k, v);
+    const r = await fetch(u); if (!r.ok) throw new Error('MusicBrainz ' + r.status); return r.json();
+  };
+  const p = mbChain.then(run, run); mbChain = p.catch(() => {}); return p;
+}
+const credit = r => (r['artist-credit'] || []).map(c => (c.name || '') + (c.joinphrase || '')).join('');
+const relInfo = r => ({ id: r.id, title: r.title || '', artist: credit(r), date: r.date || '', barcode: r.barcode || '',
+  tracks: (r.media || []).reduce((n, m) => n + (m['track-count'] || 0), 0) });
+
+async function api(method, path, body) {
+  const r = await fetch(API + path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  if (!r.ok) throw new Error((await r.text()) || r.status); return r.json();
+}
+
+function buildView() {
+  const f = $('filter').value;
+  VIEW = QUEUE.filter(i => {
+    const d = DEC[i.key];
+    if (f === 'done') return !!d;
+    if (d) return false;
+    return f === 'todo' ? i.cls !== 'guess' : i.cls === f;
+  });
+  POS = Math.min(POS, Math.max(0, VIEW.length - 1));
+  const left = QUEUE.filter(i => i.cls !== 'guess' && !DEC[i.key]).length;
+  $('count').textContent = `${VIEW.length} shown · ${left} still to review · ${Object.keys(DEC).length} decided`;
+}
+
+function show() {
+  buildView(); SEL = null; EXTRA = [];
+  const box = $('card'); box.replaceChildren();
+  const it = VIEW[POS];
+  if (!it) { box.append(el('div', { class: 'card' }, 'Nothing here. Change the filter above.')); return; }
+  const d = DEC[it.key];
+  const cands = () => [...it.cands, ...EXTRA.filter(x => !it.cands.some(c => c.id === x.id))];
+  const card = el('div', { class: 'card' });
+  card.append(
+    el('div', {}, el('span', { class: 'pill ' + (d ? 'done' : it.cls) }, d ? 'decided' : it.cls), el('span', { class: 't' }, `${it.artist} — ${it.title}`)),
+    el('div', { class: 'm' }, `${it.ntracks} tracks · ${it.folder.replace('/media/space2/music/', '')}`));
+  if (it.dup) card.append(el('div', { class: 'warn' }, 'This folder holds both FLAC and MP3 copies (your duplicate to-do). It will be skipped when tags are written until that is cleaned up.'));
+  if (it.cur_mbid) card.append(el('div', { class: 'm' }, 'Already has MusicBrainz id ' + it.cur_mbid));
+  if (d) card.append(el('div', { class: 'warn' }, d.action === 'accept' ? `Decided: ${d.title} (${d.barcode || 'no barcode'})` : `Decided: ${d.action}`));
+  box.append(card);
+
+  const opts = el('div', { class: 'opts' }), cmp = el('div'), bcIn = el('input', { type: 'text', id: 'bc', placeholder: 'barcode (edit if needed)', autocomplete: 'off', inputmode: 'numeric' });
+  const save = el('button', { disabled: '' }, 'Save choice');
+  function draw() {
+    opts.replaceChildren();
+    const list = cands();
+    if (!list.length) opts.append(el('div', { class: 'm' }, 'No candidates yet. Use the search below.'));
+    list.forEach(c => {
+      const mt = c.tracks === it.ntracks;
+      const b = el('button', { class: 'opt', role: 'radio', 'aria-checked': SEL === c.id ? 'true' : 'false', onclick: () => pick(c) },
+        el('div', { class: 't' }, c.title), el('div', { class: 'm' }, `${c.artist} · ${c.date || 'no date'} · `, el('span', { class: mt ? 'good' : 'off' }, `${c.tracks} tracks`), ` · ${c.barcode || 'no barcode'}` + (c.score != null ? ` · score ${c.score}` : '')));
+      opts.append(b);
+    });
+    save.disabled = !SEL;
+  }
+  async function pick(c) {
+    SEL = c.id; bcIn.value = c.barcode || ''; draw(); cmp.replaceChildren(el('div', { class: 'm' }, 'Loading track list…'));
+    try {
+      const r = await mb('release/' + c.id, { inc: 'recordings' });
+      if (SEL !== c.id) return;
+      const mine = (r.media || []).flatMap(m => (m.tracks || []).map(t => t.title));
+      cmp.replaceChildren(el('div', { class: 'cols' },
+        el('div', {}, el('b', {}, 'Your files'), el('ol', {}, it.tracks.map(t => el('li', {}, t)))),
+        el('div', {}, el('b', {}, 'MusicBrainz'), el('ol', {}, mine.map((t, i) => el('li', { class: norm(t) === norm(it.tracks[i]) ? 'good' : '' }, t))))),
+        el('div', { class: 'm' }, el('a', { href: 'https://musicbrainz.org/release/' + c.id, target: '_blank', rel: 'noopener' }, 'open on musicbrainz.org')));
+    } catch (e) { cmp.replaceChildren(el('div', { class: 'warn' }, String(e.message))); }
+  }
+  save.addEventListener('click', async () => {
+    const c = cands().find(x => x.id === SEL); if (!c) return;
+    await commit(it, { action: 'accept', release_id: c.id, title: c.title, artist: c.artist, barcode: bcIn.value });
+  });
+  box.append(opts, el('div', { class: 'row' }, bcIn, save));
+
+  const q = el('input', { type: 'text', value: [it.artist, it.title].join(' '), 'aria-label': 'search MusicBrainz' });
+  const go = el('button', { class: 'sec' }, 'Search MusicBrainz');
+  go.addEventListener('click', async () => {
+    say('Searching MusicBrainz…');
+    try {
+      const r = await mb('release/', { query: q.value, limit: 15 });
+      EXTRA = (r.releases || []).map(relInfo); say(EXTRA.length + ' results'); draw();
+    } catch (e) { say(e.message); }
+  });
+  q.addEventListener('keydown', e => { if (e.key === 'Enter') go.click(); });
+  box.append(el('div', { class: 'row' }, q, go), cmp);
+  if (!cmp.childNodes.length) cmp.append(el('details', {}, el('summary', {}, 'Your track list'), el('ol', {}, it.tracks.map(t => el('li', {}, t)))));
+
+  box.append(el('div', { class: 'btnrow' },
+    el('button', { class: 'sec', onclick: () => { POS = Math.max(0, POS - 1); show(); } }, '← Prev'),
+    el('button', { class: 'sec', onclick: () => { POS = Math.min(VIEW.length - 1, POS + 1); show(); } }, 'Skip for now →'),
+    el('button', { class: 'bad', onclick: () => commit(it, { action: 'none' }) }, 'None of these'),
+    d ? el('button', { class: 'sec', onclick: () => commit(it, { action: 'clear' }) }, 'Undo decision') : null));
+  draw();
+  if (!d && it.cands.length && it.cands[0].score >= 0.75) { /* leave unselected: the point is a human choice */ }
+}
+
+async function commit(it, body) {
+  say('Saving…');
+  try {
+    await api('POST', 'decisions', { key: it.key, ...body });
+    if (body.action === 'clear') delete DEC[it.key]; else DEC[it.key] = { ...body };
+    say('Saved'); show();
+  } catch (e) { say('Save failed: ' + e.message); }
+}
+
+async function init() {
+  try {
+    [QUEUE, DEC] = await Promise.all([api('GET', 'queue'), api('GET', 'decisions')]);
+  } catch (e) { say('Could not load the review queue: ' + e.message); return; }
+  $('filter').addEventListener('change', () => { POS = 0; show(); });
+  show();
+}
+init();
+</script>
+</body>
+</html>
