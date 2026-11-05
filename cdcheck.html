@@ -27,6 +27,14 @@
   ul { list-style:none; padding:0; margin:0; }
   li { padding:6px 0; border-top:1px solid #8884; }
   li:first-child { border-top:0; }
+  .opts { display:flex; flex-direction:column; gap:8px; margin:10px 0; }
+  button.opt { display:block; width:100%; text-align:left; background:var(--bg); color:var(--fg); border:2px solid #8886; padding:10px 12px; }
+  button.opt[aria-checked=true] { border-color:var(--acc); background:color-mix(in srgb, var(--acc) 14%, var(--bg)); }
+  button.opt[aria-checked=true] .t::before { content:'\2713  '; color:var(--acc); }
+  button.opt.none { text-align:center; color:var(--mut); }
+  button:disabled { opacity:.45; }
+  .btnrow { display:flex; gap:8px; margin-top:6px; }
+  .btnrow button { flex:1; }
 </style>
 </head>
 <body>
@@ -40,7 +48,7 @@
     <button id="stop" class="sec" style="display:none">Stop</button>
   </div>
   <form class="row" id="manual">
-    <input type="text" id="code" inputmode="numeric" placeholder="or type barcode digits">
+    <input type="text" id="code" autocapitalize="characters" autocomplete="off" placeholder="or type barcode / catalog no.">
     <button>Look up</button>
   </form>
   <form class="row" id="textsearch">
@@ -80,14 +88,26 @@ function norm(s) {
     .replace(/[^a-z0-9]+/g, ' ').trim();
 }
 const tokens = s => new Set(norm(s).split(' ').filter(Boolean));
-function overlap(a, b) {            // share of the smaller token set found in the larger
-  const A = tokens(a), B = tokens(b); if (!A.size || !B.size) return 0;
-  let n = 0; for (const t of A) if (B.has(t)) n++;
-  return n / Math.min(A.size, B.size);
+function shared(a, b) {
+  const A = tokens(a), B = tokens(b); let n = 0;
+  for (const t of A) if (B.has(t)) n++;
+  return { n, a: A.size, b: B.size };
 }
+function overlapMin(a, b) {         // lenient (artists): share of the smaller token set found in the larger
+  const s = shared(a, b); return s.a && s.b ? s.n / Math.min(s.a, s.b) : 0;
+}
+function overlap(a, b) {            // strict (titles): a one-word title like "5" must not match a long one
+  const s = shared(a, b); if (!s.a || !s.b) return 0;
+  const small = Math.min(s.a, s.b), dice = s.n / Math.sqrt(s.a * s.b);
+  return small >= 3 ? Math.max(dice, 0.9 * s.n / small) : dice;
+}
+const mainTitle = s => String(s || '').split(/\s*[:(\[]/)[0];   // "Pulp Fiction: Music From the Motion Picture" -> "Pulp Fiction"
 function score(want, have) {        // 0..1
-  const t = norm(want.title) === norm(have.album) ? 1 : overlap(want.title, have.album) * 0.9;
-  const a = !want.artist || /^various/i.test(have.artist) ? 0.7 : overlap(want.artist, have.artist);
+  let t = norm(want.title) === norm(have.album) ? 1 : overlap(want.title, have.album) * 0.9;
+  const a = !want.artist || /^various/i.test(have.artist) ? 0.7 : overlapMin(want.artist, have.artist);
+  // same title with a different subtitle/suffix counts as the same album, but only if the artist agrees too
+  const mw = norm(mainTitle(want.title));
+  if (mw && a >= 0.5 && mw === norm(mainTitle(have.album))) t = Math.max(t, 0.95);
   return t * 0.7 + a * 0.3;
 }
 
@@ -122,8 +142,10 @@ function barcodeVariants(c) {
   if (c.length === 13 && c[0] === '0') v.add(c.slice(1));
   return [...v];
 }
+const cleanCode = s => String(s || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+const isUPC = c => /^\d{8,14}$/.test(c);          // retail UPC/EAN; anything else is a club / catalog code
 async function mbLookup(code) {
-  const q = 'barcode:(' + barcodeVariants(code).join(' OR ') + ')';
+  const q = isUPC(code) ? 'barcode:(' + barcodeVariants(code).join(' OR ') + ')' : 'catno:"' + code + '"';
   const r = await fetch(MB + '?fmt=json&limit=10&query=' + encodeURIComponent(q));
   if (!r.ok) throw new Error('MusicBrainz HTTP ' + r.status);
   const j = await r.json();
@@ -154,6 +176,79 @@ function render(heading, wants, results) {
   $('out').innerHTML = html || '<div class="card">Nothing to show.</div>';
 }
 
+// ---------- saved pairings (barcode -> album), kept by the small service behind /cdcheck-api/ ----------
+const API = '/cdcheck-api/barcodes';
+async function apiGet(code) {
+  const r = await fetch(API + '/' + code);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error('save service HTTP ' + r.status);
+  return r.json();
+}
+async function apiSave(rec) {
+  const r = await fetch(API, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(rec) });
+  if (!r.ok) throw new Error('save failed (HTTP ' + r.status + ')');
+  return r.json();
+}
+async function apiForget(code) {
+  const r = await fetch(API + '/' + code, { method:'DELETE' });
+  if (!r.ok && r.status !== 404) throw new Error('forget failed (HTTP ' + r.status + ')');
+}
+
+let PICK = null;                    // the pairing currently being chosen: { code, w, cands, sel }
+let PENDING_CODE = null;            // scanned barcode that MusicBrainz did not know; a text search can still pair it
+
+function renderPick(code, w, hits) {
+  const map = new Map();            // one bar per library album, best score wins
+  hits.forEach(h => { const o = map.get(h.a.id); if (!o || h.s > o.s) map.set(h.a.id, h); });
+  const cands = [...map.values()].sort((x, y) => y.s - x.s).slice(0, 5);
+  PICK = { code, w, cands, sel: null };
+  const head = w.id ? `<div class="t">${esc(w.title)}</div><div class="m">${esc(w.artist)} ${esc(w.date)} ${esc(w.country)}</div>`
+                    : `<div class="t">Barcode ${esc(code)}</div><div class="m">search: ${esc(w.title)}</div>`;
+  const bars = cands.map((h, i) =>
+    `<button type="button" class="opt" role="radio" aria-checked="false" data-i="${i}">
+       <div class="t">${esc(h.a.album)} <span class="m">(${Math.round(h.s * 100)}%)</span></div>
+       <div class="m">${esc(h.a.artist)}${h.a.year ? ' · ' + h.a.year : ''}</div>
+       <div class="m">${esc(h.folder)}</div></button>`).join('');
+  $('out').innerHTML = `<div class="card">${head}
+    <div class="m" style="margin-top:8px">${cands.length ? 'Tap the one that is this CD, then Save.' : 'Nothing similar in the library.'}</div>
+    <div class="opts" role="radiogroup">${bars}
+      <button type="button" class="opt none" role="radio" aria-checked="false" data-i="none">None of these — not in my library</button></div>
+    <div class="btnrow"><button type="button" id="save" disabled>Save</button></div></div>`;
+}
+function renderConfirmed(code, rec) {
+  const none = rec.status === 'none';
+  $('out').innerHTML = `<div class="card"><span class="badge ${none ? 'miss' : 'have'}">${none ? 'Marked not in library' : 'Confirmed'}</span>
+    ${none ? '' : `<div class="t">${esc(rec.album)}</div><div class="m">${esc(rec.artist)}</div><div class="m">${esc(rec.folder)}</div>`}
+    <div class="m" style="margin-top:6px">${esc(rec.mb_title)} ${rec.mb_artist ? '— ' + esc(rec.mb_artist) : ''} · saved ${esc((rec.saved || '').slice(0, 10))}</div>
+    <div class="btnrow"><button type="button" class="sec" id="change">Change</button><button type="button" class="sec" id="forget">Forget</button></div></div>`;
+  $('change').onclick = () => checkBarcode(code, true);
+  $('forget').onclick = async () => {
+    try { await apiForget(code); status('Forgotten.'); checkBarcode(code, true); } catch (e) { status('Error: ' + e.message); }
+  };
+}
+$('out').addEventListener('click', async e => {
+  const bar = e.target.closest('button.opt');
+  if (bar && PICK) {
+    PICK.sel = bar.dataset.i;
+    document.querySelectorAll('#out button.opt').forEach(b => b.setAttribute('aria-checked', b === bar ? 'true' : 'false'));
+    $('save').disabled = false;
+    return;
+  }
+  if (e.target.id === 'save' && PICK && PICK.sel !== null) {
+    const { code, w, cands, sel } = PICK, h = sel === 'none' ? null : cands[+sel];
+    const rec = { barcode: code, status: h ? 'match' : 'none', mb_release_id: w.id || '', mb_title: w.title || '', mb_artist: w.artist || '' };
+    if (h) Object.assign(rec, { album_id: h.a.id, album: h.a.album, artist: h.a.artist, folder: h.folder || '' });
+    try {
+      $('save').disabled = true; status('Saving…');
+      const saved = await apiSave(rec);
+      PENDING_CODE = null; PICK = null;
+      const last = HIST.slice().reverse().find(x => x.code === code);
+      if (last) { last.kind = h ? 'have' : 'miss'; saveHist(); }
+      renderConfirmed(saved.barcode, saved); status('Saved.');
+    } catch (err) { $('save').disabled = false; status('Error: ' + err.message); }
+  }
+});
+
 // ---------- history ----------
 let HIST = [];
 try { HIST = JSON.parse(sessionStorage.getItem('cdcheck') || '[]'); } catch {}
@@ -174,19 +269,28 @@ $('copy').onclick = async () => {
 };
 
 // ---------- actions ----------
-async function checkBarcode(code) {
-  code = code.replace(/\D/g, ''); if (!code) return;
-  $('out').innerHTML = '';
+async function checkBarcode(code, force = false) {
+  code = cleanCode(code); if (!code) return;
+  $('out').innerHTML = ''; PICK = null; PENDING_CODE = null;
   try {
-    status('Looking up ' + code + ' on MusicBrainz…');
+    if (!force) {                  // a pairing you confirmed earlier wins over any guessing
+      let stored = null;
+      try { stored = await apiGet(code); } catch (e) { status('Note: ' + e.message); }
+      if (stored) {
+        renderConfirmed(code, stored);
+        HIST.push({ title: stored.album || stored.mb_title || code, artist: stored.artist || '', kind: stored.status === 'none' ? 'miss' : 'have', code }); saveHist();
+        status('Barcode ' + code + ' (saved pairing)'); return;
+      }
+    }
+    status('Looking up ' + code + ' on MusicBrainz' + (isUPC(code) ? '' : ' (catalog number)') + '…');
     const wants = await mbLookup(code);
-    if (!wants.length) { status('Barcode ' + code + ' not in MusicBrainz. Try the text search below.'); return; }
+    if (!wants.length) { PENDING_CODE = code; status('Barcode ' + code + ' not in MusicBrainz. Search artist / album below to pair it.'); return; }
     // different pressings of the same album are duplicates: keep one per title+artist
     const seen = new Set(), uniq = wants.filter(w => { const k = norm(w.title) + '|' + norm(w.artist); if (seen.has(k)) return false; seen.add(k); return true; });
     status('Checking library…');
     const results = [];
     for (const w of uniq) results.push(await findInLibrary(w));
-    render(code, uniq, results);
+    renderPick(code, uniq[0], results.flat());
     addHist(uniq[0], results[0], code);
     status('Barcode ' + code);
   } catch (e) { status('Error: ' + e.message); }
@@ -199,8 +303,9 @@ async function checkText(q) {
     const hits = lib.filter(a => { const h = norm(a.album + ' ' + a.artist); return toks.every(t => h.includes(t)); })
                     .slice(0, 10).map(a => ({ a, s: 1 }));
     for (const h of hits) h.folder = await folderOf(h.a.id);
-    render(q, [{ title: q, artist: '', date: '', country: '' }], [hits]);
-    status(hits.length + ' match(es)');
+    if (PENDING_CODE) renderPick(PENDING_CODE, { title: q, artist: '', id: '' }, hits);   // pair the scanned barcode with one of these
+    else render(q, [{ title: q, artist: '', date: '', country: '' }], [hits]);
+    status(hits.length + ' match(es)' + (PENDING_CODE ? ' for barcode ' + PENDING_CODE : ''));
   } catch (e) { status('Error: ' + e.message); }
 }
 
@@ -220,7 +325,9 @@ async function startScan() {
       Det = BarcodeDetectionAPI.BarcodeDetector;
     } catch (e) { status('Could not load barcode decoder. Type the digits instead.'); return; }
   }
-  const det = new Det({ formats: ['ean_13', 'upc_a', 'ean_8', 'upc_e'] });
+  let fmts = ['ean_13', 'upc_a', 'ean_8', 'upc_e', 'code_39', 'code_128', 'itf', 'codabar'];
+  try { const sup = await Det.getSupportedFormats(); fmts = fmts.filter(f => sup.includes(f)); } catch {}
+  const det = new Det({ formats: fmts });
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
   } catch (e) { status('Camera error: ' + e.message); return; }
