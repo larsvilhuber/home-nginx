@@ -238,7 +238,8 @@ async function runImport(code, src) {
 }
 
 let PICK = null;                    // the pairing currently being chosen: { code, w, cands, sel }
-let PENDING_CODE = null;            // scanned barcode that MusicBrainz did not know; a text search can still pair it
+let PENDING_CODE = null;            // last scanned barcode: a text search can still pair it with the right album
+let PENDING_W = null;               // MusicBrainz's idea of that barcode (kept in the saved pairing), or null
 
 function renderPick(code, w, hits, rips = []) {
   const map = new Map();            // one bar per library album, best score wins
@@ -256,7 +257,7 @@ function renderPick(code, w, hits, rips = []) {
        <div class="m">${esc(h.a.artist)}${h.a.year ? ' · ' + h.a.year : ''}</div>
        <div class="m">${esc(h.folder)}</div></button>`).join('');
   $('out').innerHTML = `<div class="card">${head}
-    <div class="m" style="margin-top:8px">${cands.length ? 'Tap the one that is this CD, then Save.' : 'Nothing similar in the library.'}</div>
+    <div class="m" style="margin-top:8px">${cands.length ? 'Tap the one that is this CD, then Save. Not here? Search by artist / album above.' : 'Nothing similar in the library. Search by artist / album above to find it and link this barcode.'}</div>
     <div class="opts" role="radiogroup">${bars}
       <button type="button" class="opt none" role="radio" aria-checked="false" data-i="none">None of these — not in my library</button></div>
     <div class="btnrow"><button type="button" id="save" disabled>Save</button>${ripc.length ? '<button type="button" id="imp" disabled>Save + import</button>' : ''}</div></div>`;
@@ -342,6 +343,7 @@ async function checkBarcode(code, force = false) {
     }
     status('Looking up ' + code + ' on MusicBrainz' + (isUPC(code) ? '' : ' (catalog number)') + '…');
     const wants = await mbLookup(code);
+    PENDING_CODE = code; PENDING_W = wants[0] || null;     // stay armed: if the title does not match, a search below can still link them
     if (!wants.length) { PENDING_CODE = code; status('Barcode ' + code + ' not in MusicBrainz. Search artist / album below to pair it.'); return; }
     // different pressings of the same album are duplicates: keep one per title+artist
     const seen = new Set(), uniq = wants.filter(w => { const k = norm(w.title) + '|' + norm(w.artist); if (seen.has(k)) return false; seen.add(k); return true; });
@@ -363,7 +365,7 @@ async function checkText(q) {
                     .slice(0, 10).map(a => ({ a, s: 1 }));
     for (const h of hits) h.folder = await folderOf(h.a.id);
     const rips = (await rippedList()).filter(r => { const h = norm(r.album + ' ' + r.artist); return toks.every(t => h.includes(t)); }).map(r => ({ ...r, s: 1 }));
-    if (PENDING_CODE) renderPick(PENDING_CODE, { title: q, artist: '', id: '' }, hits, rips);   // pair the scanned barcode with one of these
+    if (PENDING_CODE) renderPick(PENDING_CODE, PENDING_W || { title: q, artist: '', id: '' }, hits, rips);   // pair the scanned barcode with one of these
     else {
       render(q, [{ title: q, artist: '', date: '', country: '' }], [hits]);
       $('out').insertAdjacentHTML('beforeend', rips.map(r => `<div class="card"><span class="badge rip">Ripped, not imported</span>
@@ -398,10 +400,20 @@ async function startScan() {
   const v = $('cam'); v.srcObject = stream; v.style.display = 'block'; await v.play();
   $('scan').style.display = 'none'; $('stop').style.display = '';
   status('Point the camera at the barcode…');
+  let busy = false, lastCode = '', lastAt = 0;       // camera stays on; the same barcode held in view is not re-read
   timer = setInterval(async () => {
+    if (busy) return;
     try {
       const codes = await det.detect(v);
-      if (codes.length) { const c = codes[0].rawValue; stopScan(); if (navigator.vibrate) navigator.vibrate(60); $('code').value = c; checkBarcode(c); }
+      if (!codes.length) return;
+      const c = codes[0].rawValue, now = Date.now();
+      const again = cleanCode(c) === lastCode && now - lastAt < 4000;
+      lastCode = cleanCode(c); lastAt = now;
+      if (again) return;
+      busy = true;
+      if (navigator.vibrate) navigator.vibrate(60);
+      $('code').value = c;
+      try { await checkBarcode(c); } finally { busy = false; lastAt = Date.now(); }
     } catch {}
   }, 250);
 }
