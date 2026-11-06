@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CD Check</title>
 <style>
-  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --ok:#1b7f3b; --no:#b3261e; --warn:#9a6700; --acc:#2457d6; }
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --ok:#1b7f3b; --no:#b3261e; --warn:#9a6700; --acc:#2457d6; --rip:#7b3fc4; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#121214; --fg:#ececf1; --mut:#9a9aa6; --card:#1e1e22; --ok:#4cc26b; --no:#ff6b61; --warn:#e3b341; --acc:#7ea2ff; }
+    :root { --bg:#121214; --fg:#ececf1; --mut:#9a9aa6; --card:#1e1e22; --ok:#4cc26b; --no:#ff6b61; --warn:#e3b341; --acc:#7ea2ff; --rip:#a67be8; }
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; }
@@ -21,7 +21,7 @@
   button.sec { background:var(--card); color:var(--fg); }
   .card { background:var(--card); border-radius:10px; padding:12px; margin:10px 0; }
   .badge { display:inline-block; padding:2px 8px; border-radius:99px; font-weight:600; font-size:.85rem; color:#fff; }
-  .have { background:var(--ok); } .miss { background:var(--no); } .maybe { background:var(--warn); }
+  .have { background:var(--ok); } .rip { background:var(--rip); } .miss { background:var(--no); } .maybe { background:var(--warn); }
   .t { font-weight:600; } .m { color:var(--mut); font-size:.85rem; word-break:break-all; }
   #status { color:var(--mut); font-size:.9rem; min-height:1.3em; }
   ul { list-style:none; padding:0; margin:0; }
@@ -32,6 +32,8 @@
   button.opt[aria-checked=true] { border-color:var(--acc); background:color-mix(in srgb, var(--acc) 14%, var(--bg)); }
   button.opt[aria-checked=true] .t::before { content:'\2713  '; color:var(--acc); }
   button.opt.none { text-align:center; color:var(--mut); }
+  button.opt.ripc { border-color:var(--rip); }
+  button.opt.ripc[aria-checked=true] { background:color-mix(in srgb, var(--rip) 16%, var(--bg)); }
   button:disabled { opacity:.45; }
   .btnrow { display:flex; gap:8px; margin-top:6px; }
   .btnrow button { flex:1; }
@@ -194,33 +196,80 @@ async function apiForget(code) {
   if (!r.ok && r.status !== 404) throw new Error('forget failed (HTTP ' + r.status + ')');
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function rippedList() {      // albums ARM has ripped that are still waiting in its output folder
+  try { const r = await fetch('/cdcheck-api/ripped', { cache:'no-store' }); return r.ok ? await r.json() : []; } catch { return []; }
+}
+function ripMatches(wants, rips) {
+  return rips.map(r => ({ ...r, s: Math.max(...wants.map(w => score(w, { album:r.album, artist:r.artist }))) }))
+             .filter(r => r.s >= 0.8).sort((x, y) => y.s - x.s);
+}
+// After an import Lyrion needs a rescan; once it has listed the album, upgrade the saved record to a normal album pairing.
+async function resolveImported(code, rec, wait) {
+  if (wait) {
+    await sleep(2000);
+    for (let i = 0; i < 90; i++) { const s = await rpc(['serverstatus', 0, 0]); if (!s.rescan) break; await sleep(2000); }
+  } else if ((await rpc(['serverstatus', 0, 0])).rescan) return null;
+  LIB = null;
+  const hits = (await library()).map(a => ({ a, s: score({ title:rec.album, artist:rec.artist }, a) }))
+                                .filter(x => x.s >= 0.85).sort((x, y) => y.s - x.s);
+  if (!hits.length) return null;
+  const h = hits[0]; h.folder = await folderOf(h.a.id);
+  return apiSave({ barcode:code, status:'match', mb_release_id:rec.mb_release_id || '', mb_title:rec.mb_title || '', mb_artist:rec.mb_artist || '',
+                   album_id:h.a.id, album:h.a.album, artist:h.a.artist, folder:h.folder || rec.folder || '' });
+}
+async function runImport(code, src) {
+  try {
+    status('Moving into the library…');
+    const r = await fetch('/cdcheck-api/import', { method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ barcode:code, arm_folder:src.arm_folder, mb_release_id:src.mb_release_id || '', mb_title:src.mb_title || '', mb_artist:src.mb_artist || '' }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    PICK = null; PENDING_CODE = null;
+    const last = HIST.slice().reverse().find(x => x.code === code);
+    if (last) { last.kind = 'have'; saveHist(); }
+    renderConfirmed(code, j);
+    if (!j.rescan) { status('Imported, but the Lyrion rescan did not start: ' + (j.rescan_error || '')); return; }
+    status('Imported. Waiting for Lyrion to rescan…');
+    const m = await resolveImported(code, j, true);
+    if (m) { renderConfirmed(code, m); status('Imported and in the library.'); }
+    else status('Imported; Lyrion has not listed it yet. Look the barcode up again later.');
+  } catch (e) { status('Error: ' + e.message); }
+}
+
 let PICK = null;                    // the pairing currently being chosen: { code, w, cands, sel }
 let PENDING_CODE = null;            // scanned barcode that MusicBrainz did not know; a text search can still pair it
 
-function renderPick(code, w, hits) {
+function renderPick(code, w, hits, rips = []) {
   const map = new Map();            // one bar per library album, best score wins
   hits.forEach(h => { const o = map.get(h.a.id); if (!o || h.s > o.s) map.set(h.a.id, h); });
-  const cands = [...map.values()].sort((x, y) => y.s - x.s).slice(0, 5);
+  const libc = [...map.values()].sort((x, y) => y.s - x.s).slice(0, 5);
+  const ripc = rips.map(r => ({ a:{ album:r.album, artist:r.artist, id:null, year:'' }, s:r.s, rip:r,
+                                folder:'Ripped, not yet in the library: ' + r.rel + ' (' + r.tracks + ' tracks)' }));
+  const cands = [...ripc, ...libc];
   PICK = { code, w, cands, sel: null };
   const head = w.id ? `<div class="t">${esc(w.title)}</div><div class="m">${esc(w.artist)} ${esc(w.date)} ${esc(w.country)}</div>`
                     : `<div class="t">Barcode ${esc(code)}</div><div class="m">search: ${esc(w.title)}</div>`;
   const bars = cands.map((h, i) =>
-    `<button type="button" class="opt" role="radio" aria-checked="false" data-i="${i}">
-       <div class="t">${esc(h.a.album)} <span class="m">(${Math.round(h.s * 100)}%)</span></div>
+    `<button type="button" class="opt${h.rip ? ' ripc' : ''}" role="radio" aria-checked="false" data-i="${i}">
+       <div class="t">${h.rip ? '<span class="badge rip">ripped</span> ' : ''}${esc(h.a.album)} <span class="m">(${Math.round(h.s * 100)}%)</span></div>
        <div class="m">${esc(h.a.artist)}${h.a.year ? ' · ' + h.a.year : ''}</div>
        <div class="m">${esc(h.folder)}</div></button>`).join('');
   $('out').innerHTML = `<div class="card">${head}
     <div class="m" style="margin-top:8px">${cands.length ? 'Tap the one that is this CD, then Save.' : 'Nothing similar in the library.'}</div>
     <div class="opts" role="radiogroup">${bars}
       <button type="button" class="opt none" role="radio" aria-checked="false" data-i="none">None of these — not in my library</button></div>
-    <div class="btnrow"><button type="button" id="save" disabled>Save</button></div></div>`;
+    <div class="btnrow"><button type="button" id="save" disabled>Save</button>${ripc.length ? '<button type="button" id="imp" disabled>Save + import</button>' : ''}</div></div>`;
 }
 function renderConfirmed(code, rec) {
-  const none = rec.status === 'none';
-  $('out').innerHTML = `<div class="card"><span class="badge ${none ? 'miss' : 'have'}">${none ? 'Marked not in library' : 'Confirmed'}</span>
-    ${none ? '' : `<div class="t">${esc(rec.album)}</div><div class="m">${esc(rec.artist)}</div><div class="m">${esc(rec.folder)}</div>`}
+  const none = rec.status === 'none', rip = rec.status === 'ripped', imp = rec.status === 'imported';
+  const [bc, bt] = none ? ['miss', 'Marked not in library'] : rip ? ['rip', 'Ripped, waiting to import']
+                 : imp ? ['have', rec.album_id ? 'Imported' : 'Imported, Lyrion is rescanning'] : ['have', 'Confirmed'];
+  $('out').innerHTML = `<div class="card"><span class="badge ${bc}">${bt}</span>
+    ${none ? '' : `<div class="t">${esc(rec.album)}</div><div class="m">${esc(rec.artist)}</div><div class="m">${esc(rip ? rec.arm_folder : rec.folder)}</div>`}
     <div class="m" style="margin-top:6px">${esc(rec.mb_title)} ${rec.mb_artist ? '— ' + esc(rec.mb_artist) : ''} · saved ${esc((rec.saved || '').slice(0, 10))}</div>
-    <div class="btnrow"><button type="button" class="sec" id="change">Change</button><button type="button" class="sec" id="forget">Forget</button></div></div>`;
+    <div class="btnrow">${rip ? '<button type="button" id="doimp">Import to library</button>' : ''}<button type="button" class="sec" id="change">Change</button><button type="button" class="sec" id="forget">Forget</button></div></div>`;
+  if (rip) $('doimp').onclick = () => runImport(code, rec);
   $('change').onclick = () => checkBarcode(code, true);
   $('forget').onclick = async () => {
     try { await apiForget(code); status('Forgotten.'); checkBarcode(code, true); } catch (e) { status('Error: ' + e.message); }
@@ -232,18 +281,25 @@ $('out').addEventListener('click', async e => {
     PICK.sel = bar.dataset.i;
     document.querySelectorAll('#out button.opt').forEach(b => b.setAttribute('aria-checked', b === bar ? 'true' : 'false'));
     $('save').disabled = false;
+    if ($('imp')) $('imp').disabled = !(PICK.sel !== 'none' && PICK.cands[+PICK.sel].rip);
     return;
+  }
+  if (e.target.id === 'imp' && PICK && PICK.sel !== null && PICK.sel !== 'none') {
+    const { code, w, cands, sel } = PICK, h = cands[+sel];
+    $('imp').disabled = true; $('save').disabled = true;
+    return runImport(code, { arm_folder: h.rip.rel, mb_release_id: w.id || '', mb_title: w.title || '', mb_artist: w.artist || '' });
   }
   if (e.target.id === 'save' && PICK && PICK.sel !== null) {
     const { code, w, cands, sel } = PICK, h = sel === 'none' ? null : cands[+sel];
-    const rec = { barcode: code, status: h ? 'match' : 'none', mb_release_id: w.id || '', mb_title: w.title || '', mb_artist: w.artist || '' };
-    if (h) Object.assign(rec, { album_id: h.a.id, album: h.a.album, artist: h.a.artist, folder: h.folder || '' });
+    const rec = { barcode: code, status: !h ? 'none' : h.rip ? 'ripped' : 'match', mb_release_id: w.id || '', mb_title: w.title || '', mb_artist: w.artist || '' };
+    if (h && h.rip) Object.assign(rec, { album: h.a.album, artist: h.a.artist, arm_folder: h.rip.rel });
+    else if (h) Object.assign(rec, { album_id: h.a.id, album: h.a.album, artist: h.a.artist, folder: h.folder || '' });
     try {
       $('save').disabled = true; status('Saving…');
       const saved = await apiSave(rec);
       PENDING_CODE = null; PICK = null;
       const last = HIST.slice().reverse().find(x => x.code === code);
-      if (last) { last.kind = h ? 'have' : 'miss'; saveHist(); }
+      if (last) { last.kind = !h ? 'miss' : h.rip ? 'rip' : 'have'; saveHist(); }
       renderConfirmed(saved.barcode, saved); status('Saved.');
     } catch (err) { $('save').disabled = false; status('Error: ' + err.message); }
   }
@@ -255,16 +311,16 @@ try { HIST = JSON.parse(sessionStorage.getItem('cdcheck') || '[]'); } catch {}
 function saveHist() { try { sessionStorage.setItem('cdcheck', JSON.stringify(HIST)); } catch {} drawHist(); }
 function drawHist() {
   $('hist').innerHTML = HIST.slice().reverse().map(h =>
-    `<li><span class="badge ${h.kind}">${h.kind === 'have' ? 'have' : h.kind === 'maybe' ? '?' : 'missing'}</span>
+    `<li><span class="badge ${h.kind}">${h.kind === 'have' ? 'have' : h.kind === 'rip' ? 'ripped' : h.kind === 'maybe' ? '?' : 'missing'}</span>
      ${esc(h.title)} <span class="m">— ${esc(h.artist)} ${esc(h.code || '')}</span></li>`).join('');
 }
-function addHist(w, hits, code) {
-  const best = hits[0], kind = best && best.s >= 0.85 ? 'have' : best ? 'maybe' : 'miss';
+function addHist(w, hits, code, isRip) {
+  const best = hits[0], kind = isRip ? 'rip' : best && best.s >= 0.85 ? 'have' : best ? 'maybe' : 'miss';
   HIST.push({ title: w.title, artist: w.artist, kind, code }); saveHist();
 }
 $('clear').onclick = () => { HIST = []; saveHist(); };
 $('copy').onclick = async () => {
-  const t = HIST.filter(h => h.kind !== 'have').map(h => `${h.artist} - ${h.title} (${h.code || ''})`).join('\n');
+  const t = HIST.filter(h => h.kind !== 'have' && h.kind !== 'rip').map(h => `${h.artist} - ${h.title} (${h.code || ''})`).join('\n');
   try { await navigator.clipboard.writeText(t); status('Copied.'); } catch { status(t || 'Nothing missing.'); }
 };
 
@@ -276,9 +332,11 @@ async function checkBarcode(code, force = false) {
     if (!force) {                  // a pairing you confirmed earlier wins over any guessing
       let stored = null;
       try { stored = await apiGet(code); } catch (e) { status('Note: ' + e.message); }
+      if (stored && stored.status === 'ripped' && !(await rippedList()).some(r => r.rel === stored.arm_folder)) stored = null;   // moved or deleted since
+      if (stored && stored.status === 'imported' && !stored.album_id) stored = await resolveImported(code, stored, false).catch(() => null) || stored;
       if (stored) {
         renderConfirmed(code, stored);
-        HIST.push({ title: stored.album || stored.mb_title || code, artist: stored.artist || '', kind: stored.status === 'none' ? 'miss' : 'have', code }); saveHist();
+        HIST.push({ title: stored.album || stored.mb_title || code, artist: stored.artist || '', kind: stored.status === 'none' ? 'miss' : stored.status === 'ripped' ? 'rip' : 'have', code }); saveHist();
         status('Barcode ' + code + ' (saved pairing)'); return;
       }
     }
@@ -290,8 +348,9 @@ async function checkBarcode(code, force = false) {
     status('Checking library…');
     const results = [];
     for (const w of uniq) results.push(await findInLibrary(w));
-    renderPick(code, uniq[0], results.flat());
-    addHist(uniq[0], results[0], code);
+    const ripHits = ripMatches(uniq, await rippedList());
+    renderPick(code, uniq[0], results.flat(), ripHits);
+    addHist(uniq[0], results[0], code, ripHits.length > 0);
     status('Barcode ' + code);
   } catch (e) { status('Error: ' + e.message); }
 }
@@ -303,9 +362,14 @@ async function checkText(q) {
     const hits = lib.filter(a => { const h = norm(a.album + ' ' + a.artist); return toks.every(t => h.includes(t)); })
                     .slice(0, 10).map(a => ({ a, s: 1 }));
     for (const h of hits) h.folder = await folderOf(h.a.id);
-    if (PENDING_CODE) renderPick(PENDING_CODE, { title: q, artist: '', id: '' }, hits);   // pair the scanned barcode with one of these
-    else render(q, [{ title: q, artist: '', date: '', country: '' }], [hits]);
-    status(hits.length + ' match(es)' + (PENDING_CODE ? ' for barcode ' + PENDING_CODE : ''));
+    const rips = (await rippedList()).filter(r => { const h = norm(r.album + ' ' + r.artist); return toks.every(t => h.includes(t)); }).map(r => ({ ...r, s: 1 }));
+    if (PENDING_CODE) renderPick(PENDING_CODE, { title: q, artist: '', id: '' }, hits, rips);   // pair the scanned barcode with one of these
+    else {
+      render(q, [{ title: q, artist: '', date: '', country: '' }], [hits]);
+      $('out').insertAdjacentHTML('beforeend', rips.map(r => `<div class="card"><span class="badge rip">Ripped, not imported</span>
+        <div class="t">${esc(r.album)}</div><div class="m">${esc(r.artist)} · ${r.tracks} tracks</div></div>`).join(''));
+    }
+    status((hits.length + rips.length) + ' match(es)' + (PENDING_CODE ? ' for barcode ' + PENDING_CODE : ''));
   } catch (e) { status('Error: ' + e.message); }
 }
 

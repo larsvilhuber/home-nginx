@@ -45,6 +45,7 @@
   <div class="row">
     <select id="filter" aria-label="Show">
       <option value="todo">To review</option>
+      <option value="strong">Track list matches (quick wins)</option>
       <option value="medium">Medium matches</option>
       <option value="low">Low matches</option>
       <option value="no-candidate">No candidate</option>
@@ -96,6 +97,7 @@ function buildView() {
     const d = DEC[i.key];
     if (f === 'done') return !!d;
     if (d) return false;
+    if (f === 'strong') return (i.tl_best || 0) >= 0.9 && i.cls !== 'guess';
     return f === 'todo' ? i.cls !== 'guess' : i.cls === f;
   });
   POS = Math.min(POS, Math.max(0, VIEW.length - 1));
@@ -109,7 +111,7 @@ function show() {
   const it = VIEW[POS];
   if (!it) { box.append(el('div', { class: 'card' }, 'Nothing here. Change the filter above.')); return; }
   const d = DEC[it.key];
-  const cands = () => [...it.cands, ...EXTRA.filter(x => !it.cands.some(c => c.id === x.id))];
+  const cands = () => [...it.cands].sort((a, b) => (b.tl_match || 0) / (b.tl_total || 1) - (a.tl_match || 0) / (a.tl_total || 1)).concat(EXTRA.filter(x => !it.cands.some(c => c.id === x.id)));
   const card = el('div', { class: 'card' });
   card.append(
     el('div', {}, el('span', { class: 'pill ' + (d ? 'done' : it.cls) }, d ? 'decided' : it.cls), el('span', { class: 't' }, `${it.artist} — ${it.title}`)),
@@ -128,7 +130,7 @@ function show() {
     list.forEach(c => {
       const mt = c.tracks === it.ntracks;
       const b = el('button', { class: 'opt', role: 'radio', 'aria-checked': SEL === c.id ? 'true' : 'false', onclick: () => pick(c) },
-        el('div', { class: 't' }, c.title), el('div', { class: 'm' }, `${c.artist} · ${c.date || 'no date'} · `, el('span', { class: mt ? 'good' : 'off' }, `${c.tracks} tracks`), ` · ${c.barcode || 'no barcode'}` + (c.score != null ? ` · score ${c.score}` : '')));
+        el('div', { class: 't' }, c.title), el('div', { class: 'm' }, `${c.artist} · ${c.date || 'no date'} · `, el('span', { class: mt ? 'good' : 'off' }, `${c.tracks} tracks`), ` · ${c.barcode || 'no barcode'}` + (c.score != null ? ` · score ${c.score}` : ''), c.tl_total ? el('span', { class: c.tl_match / c.tl_total >= 0.9 ? 'good' : 'off' }, ` · ${c.tl_match}/${c.tl_total} track titles match`) : null));
       opts.append(b);
     });
     save.disabled = !SEL;
