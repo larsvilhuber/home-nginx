@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CD Tag</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --ok:#1b7f3b; --no:#b3261e; --warn:#9a6700; --acc:#2457d6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121214; --fg:#ececf1; --mut:#9a9aa6; --card:#1e1e22; --ok:#4cc26b; --no:#ff6b61; --warn:#e3b341; --acc:#7ea2ff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  h2 { font-size:1.05rem; margin:22px 0 6px; }
+  .sub { color:var(--mut); font-size:.85rem; margin-bottom:12px; }
+  .row { display:flex; gap:8px; margin:10px 0; align-items:center; }
+  input[type=search] { flex:1; min-width:0; padding:10px; font-size:1rem; border:1px solid var(--mut); border-radius:8px; background:var(--bg); color:var(--fg); }
+  select { padding:8px; font-size:.9rem; border-radius:8px; border:1px solid var(--mut); background:var(--bg); color:var(--fg); }
+  button { padding:10px 14px; font-size:1rem; border:0; border-radius:8px; background:var(--acc); color:#fff; }
+  button.sec { background:var(--card); color:var(--fg); }
+  button.sm { padding:6px 10px; font-size:.85rem; }
+  button:disabled { opacity:.45; }
+  .card { background:var(--card); border-radius:10px; padding:12px; margin:10px 0; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:99px; font-weight:600; font-size:.8rem; color:#fff; }
+  .have { background:var(--ok); } .miss { background:var(--no); } .maybe { background:var(--warn); }
+  .t { font-weight:600; } .m { color:var(--mut); font-size:.85rem; word-break:break-all; }
+  #status { color:var(--mut); font-size:.9rem; min-height:1.3em; }
+  .item { display:flex; gap:10px; align-items:center; padding:8px 0; border-top:1px solid #8884; }
+  .item:first-child { border-top:0; }
+  .item > div:first-child { flex:1; min-width:0; }
+  label.chk { font-size:.9rem; color:var(--mut); display:flex; gap:6px; align-items:center; }
+  .meter { height:10px; background:#8883; border-radius:99px; overflow:hidden; margin:8px 0; }
+  .meter > div { height:100%; background:var(--warn); }
+  .meter.full > div { background:var(--ok); }
+  .ready { font-weight:700; color:var(--ok); }
+</style>
+</head>
+<body>
+<main>
+  <h1>CD Tag</h1>
+  <div class="sub">For CDs that have no barcode: find the album, give it a code, and print the codes in batches. Scan the printed code in <a href="/cdcheck.html">CD Check</a> later.</div>
+
+  <div id="after" class="card" style="display:none;border:2px solid var(--warn)">
+    <div><b>Did the sheet print?</b> <span class="m" id="afterinfo"></span></div>
+    <div class="btnrow row"><button id="done">Yes, mark printed</button><button class="sec" id="notyet">No, keep queued</button><a id="reopen" target="_blank" class="m">open PDF again</a></div>
+  </div>
+  <form class="row" id="f">
+    <input type="search" id="q" placeholder="search artist / album" autocomplete="off">
+    <button>Search</button>
+  </form>
+  <label class="chk"><input type="checkbox" id="onlyNo" checked> hide albums that already have a barcode</label>
+  <div id="status"></div>
+  <div id="out"></div>
+
+  <h2>Print queue</h2>
+  <div class="card" id="qcard">
+    <div id="qhead"></div>
+    <div class="meter" id="meter"><div></div></div>
+    <div class="row" style="margin:6px 0">
+      <button id="print">Print</button>
+      <select id="paper" title="paper size"><option value="letter">Letter</option><option value="a4">A4</option></select>
+    </div>
+    <div class="m" id="qhint"></div>
+    <div class="m">Every sheet is saved as a PDF in <code>/home/squeezebox/cdcheck-api/sheets/</code>, so you can print it again if something goes wrong.</div>
+    <div id="qlist"></div>
+  </div>
+</main>
+
+<script>
+const LMS = '/lms/jsonrpc.js', API = '/cdcheck-api/';
+const MUSIC_ROOT = '/media/space2/music';
+const SHEET = 18;                         // labels per sheet (2 columns x 9 rows)
+const $ = id => document.getElementById(id);
+const status = t => $('status').textContent = t;
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+async function rpc(cmd) {
+  const r = await fetch(LMS, { method:'POST', body: JSON.stringify({ id:1, method:'slim.request', params:['', cmd] }) });
+  if (!r.ok) throw new Error('Lyrion HTTP ' + r.status);
+  return (await r.json()).result;
+}
+async function api(path, method = 'GET', body) {
+  const r = await fetch(API + path, { method, cache:'no-store', headers: body ? { 'Content-Type':'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+function norm(s) {
+  return String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// ---------- Code 128 (subset B), drawn as SVG; no libraries ----------
+const C128 = ('212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 221312 231212 112232 122132 122231 113222 123122 123221 223211 221132 ' +
+  '221231 213212 223112 312131 311222 321122 321221 312212 322112 322211 212123 212321 232121 111323 131123 131321 112313 132113 132311 211313 231113 231311 ' +
+  '112133 112331 132131 113123 113321 133121 313121 211331 231131 213113 213311 213131 311123 311321 331121 312113 312311 332111 314111 221411 431111 111224 ' +
+  '111422 121124 121421 141122 141221 112214 112412 122114 122411 142112 142211 241211 221114 413111 241112 134111 111242 121142 121241 114212 124112 124211 ' +
+  '411212 421112 421211 212141 214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 114131 311141 411131 211412 211214 211232 2331112').split(' ');
+function code128svg(text) {
+  const vals = [104];                                         // Start B
+  for (const ch of text) { const v = ch.charCodeAt(0) - 32; if (v < 0 || v > 95) throw new Error('bad character'); vals.push(v); }
+  vals.push(vals.reduce((a, v, i) => a + v * (i || 1), 0) % 103, 106);   // checksum, Stop
+  let x = 10, bars = '';                                      // 10 modules of quiet zone each side
+  vals.forEach(v => { [...C128[v]].forEach((w, i) => { w = +w; if (i % 2 === 0) bars += `<rect x="${x}" y="0" width="${w}" height="50"/>`; x += w; }); });
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${x + 10} 50" preserveAspectRatio="none" shape-rendering="crispEdges" fill="#000">${bars}</svg>`;
+}
+
+// ---------- library + what already has a barcode ----------
+let LIB = null, PAIRS = new Map(), LAB = { queue:[], printed:{}, next:1 };
+async function library() {
+  if (LIB) return LIB;
+  status('Loading library list…');
+  LIB = (await rpc(['albums', 0, 5000, 'tags:ajlsy'])).albums_loop || [];
+  return LIB;
+}
+async function folderOf(id) {
+  const r = await rpc(['titles', 0, 1, 'album_id:' + id, 'tags:u']);
+  const u = r.titles_loop?.[0]?.url; if (!u) return '';
+  try { const p = decodeURIComponent(u.replace(/^file:\/\//, '')).replace(/^\/music/, MUSIC_ROOT); return p.substring(0, p.lastIndexOf('/')); } catch { return ''; }
+}
+async function refresh() {
+  const [b, l] = await Promise.all([api('barcodes'), api('labels')]);
+  PAIRS = new Map();                                         // album_id -> [codes]
+  for (const [code, r] of Object.entries(b)) if (r.album_id != null) { (PAIRS.get(r.album_id) || PAIRS.set(r.album_id, []).get(r.album_id)).push(code); }
+  LAB = l; drawQueue(); drawPending();
+}
+
+// ---------- search ----------
+async function search(q) {
+  $('out').innerHTML = '';
+  const toks = norm(q).split(' ').filter(Boolean); if (!toks.length) return;
+  try {
+    await refresh();
+    const only = $('onlyNo').checked;
+    const all = (await library()).filter(a => { const h = norm(a.album + ' ' + a.artist); return toks.every(t => h.includes(t)); });
+    const hits = all.filter(a => !only || !PAIRS.has(a.id)).slice(0, 15);
+    const hidden = all.length - all.filter(a => !only || !PAIRS.has(a.id)).length;
+    $('out').innerHTML = hits.map(a => {
+      const codes = PAIRS.get(a.id) || [], mine = codes.find(c => c.startsWith('LV'));
+      const state = mine ? (LAB.queue.some(x => x.code === mine) ? ['maybe', mine + ' queued'] : ['have', mine + ' printed'])
+                  : codes.length ? ['have', 'has barcode ' + codes[0]] : ['miss', 'no barcode'];
+      const btn = mine ? (LAB.queue.some(x => x.code === mine) ? '' : `<button class="sm sec" data-act="re" data-id="${a.id}">Print again</button>`)
+                       : `<button class="sm" data-act="new" data-id="${a.id}">${codes.length ? 'Label anyway' : 'Make label'}</button>`;
+      return `<div class="card"><div class="item"><div><div class="t">${esc(a.album)}</div><div class="m">${esc(a.artist)}${a.year ? ' · ' + a.year : ''}</div>
+        <span class="badge ${state[0]}">${esc(state[1])}</span></div><div>${btn}</div></div></div>`;
+    }).join('') || '<div class="card">Nothing found' + (hidden ? ` (${hidden} hidden because they already have a barcode)` : '') + '.</div>';
+    status(hits.length + ' album(s)' + (hidden ? `, ${hidden} hidden (already have a barcode)` : ''));
+  } catch (e) { status('Error: ' + e.message); }
+}
+$('f').onsubmit = e => { e.preventDefault(); search($('q').value); };
+$('out').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const a = (LIB || []).find(x => x.id == b.dataset.id); if (!a) return;
+  b.disabled = true;
+  try {
+    const r = await api('labels', 'POST', { album_id: a.id, album: a.album, artist: a.artist, folder: await folderOf(a.id), requeue: b.dataset.act === 're' });
+    status(`${r.code} queued for ${a.album}.`);
+    await search($('q').value);
+  } catch (err) { b.disabled = false; status('Error: ' + err.message); }
+});
+$('onlyNo').onchange = () => { if ($('q').value.trim()) search($('q').value); };
+
+// ---------- queue + sheet ----------
+let PRINTING = [];
+function drawPending() {
+  const p = LAB.pending;
+  $('after').style.display = p ? 'block' : 'none';
+  if (p) { PRINTING = p.codes; $('afterinfo').textContent = p.codes.length + ' labels (' + p.codes[0] + (p.codes.length > 1 ? '…' + p.codes[p.codes.length - 1] : '') + ')'; $('reopen').href = API + p.url; }
+}
+function drawQueue() {
+  const n = LAB.queue.length, ready = n >= SHEET;
+  $('qhead').innerHTML = n === 0 ? 'Nothing waiting.' : ready ? `<span class="ready">Sheet ready: ${n} labels waiting</span> (${SHEET} fit on a sheet)`
+                                                           : `${n} of ${SHEET} labels for a full sheet`;
+  $('meter').className = 'meter' + (ready ? ' full' : ''); $('meter').firstElementChild.style.width = Math.min(100, n / SHEET * 100) + '%';
+  $('print').disabled = n === 0;
+  $('print').className = ready ? '' : 'sec';
+  $('print').textContent = ready ? `Print sheet (${SHEET})` : `Print anyway (${n})`;
+  $('qhint').textContent = ready ? 'The sheet opens as a PDF to print. Cut along the dashed lines and tape each strip to its CD.' : (n ? 'Not a full sheet yet. "Print anyway" prints just these, leaving the rest of the page blank.' : '');
+  $('qlist').innerHTML = LAB.queue.map(q => `<div class="item"><div><div class="t">${esc(q.album)}</div><div class="m">${esc(q.artist)} · <b>${esc(q.code)}</b></div></div>
+    <button class="sm sec" data-rm="${esc(q.code)}">Remove</button></div>`).join('');
+}
+$('qlist').addEventListener('click', async e => {
+  const c = e.target.dataset.rm; if (!c) return;
+  try { await api('labels/' + c, 'DELETE'); await refresh(); if ($('q').value.trim()) search($('q').value); } catch (err) { status('Error: ' + err.message); }
+});
+let paper = 'letter';
+try { paper = localStorage.getItem('cdtag-paper') || 'letter'; } catch {}
+$('paper').value = paper;
+$('paper').onchange = () => { paper = $('paper').value; try { localStorage.setItem('cdtag-paper', paper); } catch {} };
+
+$('print').onclick = async () => {
+  const w = window.open('', '_blank');                      // opened now so the popup blocker allows it
+  try {
+    const r = await api('labels/sheet', 'POST', { paper });
+    PRINTING = r.codes;
+    if (w) w.location = API + r.url; else location.href = API + r.url;
+    await refresh();
+    status('Sheet saved as ' + r.file + '. Print it from the PDF window.');
+  } catch (e) { if (w) w.close(); status('Error: ' + e.message); }
+};
+$('done').onclick = async () => {
+  try { await api('labels/printed', 'POST', { codes: PRINTING }); PRINTING = []; await refresh(); status('Marked as printed.'); }
+  catch (e) { status('Error: ' + e.message); }
+};
+$('notyet').onclick = async () => { try { await api('labels/dismiss', 'POST', {}); PRINTING = []; await refresh(); } catch (e) { status('Error: ' + e.message); } };
+
+refresh().catch(e => status('Error: ' + e.message));
+</script>
+</body>
+</html>
