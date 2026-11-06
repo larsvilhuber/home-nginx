@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CD Play</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --ok:#1b7f3b; --no:#b3261e; --warn:#9a6700; --acc:#2457d6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121214; --fg:#ececf1; --mut:#9a9aa6; --card:#1e1e22; --ok:#4cc26b; --no:#ff6b61; --warn:#e3b341; --acc:#7ea2ff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  .sub { color:var(--mut); font-size:.85rem; margin-bottom:12px; }
+  .row { display:flex; gap:8px; margin:10px 0; align-items:center; }
+  select { flex:1; min-width:0; padding:10px; font-size:1rem; border-radius:8px; border:1px solid var(--mut); background:var(--bg); color:var(--fg); }
+  button { padding:10px 14px; font-size:1rem; border:0; border-radius:8px; background:var(--acc); color:#fff; }
+  button.sec { background:var(--card); color:var(--fg); }
+  button:disabled { opacity:.45; }
+  #cam { width:100%; max-height:50vh; background:#000; border-radius:10px; display:none; object-fit:cover; }
+  .card { background:var(--card); border-radius:10px; padding:12px; margin:10px 0; }
+  .now { display:flex; gap:12px; align-items:center; }
+  .now > div { min-width:0; flex:1; }
+  .t { font-weight:600; } .m { color:var(--mut); font-size:.85rem; word-break:break-all; }
+  #status { color:var(--mut); font-size:.95rem; min-height:1.4em; margin:6px 0; }
+  #status.ok { color:var(--ok); font-weight:600; } #status.bad { color:var(--no); font-weight:600; }
+  .transport button { flex:1; }
+  ul { list-style:none; padding:0; margin:0; } li { padding:6px 0; border-top:1px solid #8884; font-size:.9rem; }
+  li:first-child { border-top:0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>CD Play</h1>
+  <div class="sub">Pick a player once, then scan a CD's barcode to play it. Pair new barcodes in <a href="/cdcheck.html">CD Check</a>.</div>
+
+  <div class="row">
+    <select id="player"><option value="">Loading players…</option></select>
+    <button class="sec" id="reload" title="reload player list">↻</button>
+  </div>
+
+  <video id="cam" playsinline muted></video>
+  <div class="row">
+    <button id="scan" disabled>Start scanning</button>
+    <button id="stop" class="sec" style="display:none">Stop</button>
+  </div>
+  <div id="status"></div>
+
+  <div id="nowcard" class="card" style="display:none">
+    <div class="now"><div><div class="t" id="nt"></div><div class="m" id="na"></div><div class="m" id="nc"></div></div></div>
+    <div class="row transport">
+      <button class="sec" id="prev">⏮</button>
+      <button class="sec" id="pp">⏯</button>
+      <button class="sec" id="next">⏭</button>
+      <button class="sec" id="halt">⏹</button>
+    </div>
+  </div>
+
+  <form class="row" id="manual">
+    <input type="text" id="code" autocapitalize="characters" autocomplete="off" placeholder="or type a barcode" style="flex:1;min-width:0;padding:10px;font-size:1rem;border:1px solid var(--mut);border-radius:8px;background:var(--bg);color:var(--fg)">
+    <button class="sec">Play</button>
+  </form>
+
+  <ul id="hist"></ul>
+</main>
+
+<script>
+const LMS = '/lms/jsonrpc.js', API = '/cdcheck-api/';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function status(t, cls = '') { const s = $('status'); s.textContent = t; s.className = cls; }
+
+async function rpc(player, cmd) {
+  const r = await fetch(LMS, { method:'POST', body: JSON.stringify({ id:1, method:'slim.request', params:[player, cmd] }) });
+  if (!r.ok) throw new Error('Lyrion HTTP ' + r.status);
+  return (await r.json()).result;
+}
+const canon = c => { c = String(c || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(); return c.length === 13 && /^0\d+$/.test(c) ? c.slice(1) : c; };
+
+// ---------- sticky player ----------
+let PLAYER = '';
+try { PLAYER = localStorage.getItem('cdplay.player') || ''; } catch {}
+async function loadPlayers() {
+  const sel = $('player');
+  try {
+    const ps = (await rpc('', ['players', 0, 100])).players_loop || [];
+    ps.sort((a, b) => a.name.localeCompare(b.name));
+    sel.innerHTML = '<option value="">— choose a player —</option>' +
+      ps.map(p => `<option value="${esc(p.playerid)}">${esc(p.name)}${p.connected ? '' : ' (offline)'}</option>`).join('');
+    if (PLAYER && ps.some(p => p.playerid === PLAYER)) sel.value = PLAYER;
+    else { sel.value = ''; if (PLAYER) status('Your saved player is no longer listed. Choose another.', 'bad'); PLAYER = ''; }
+  } catch (e) { sel.innerHTML = '<option value="">Lyrion unreachable</option>'; status('Error: ' + e.message, 'bad'); }
+  $('scan').disabled = !PLAYER;
+}
+$('player').onchange = e => {
+  PLAYER = e.target.value;
+  try { localStorage.setItem('cdplay.player', PLAYER); } catch {}
+  $('scan').disabled = !PLAYER;
+  if (PLAYER) { status(''); startScan(); }
+};
+$('reload').onclick = loadPlayers;
+
+// ---------- play ----------
+let HIST = [], busy = false, lastCode = '', lastAt = 0;
+async function playCode(raw) {
+  const code = canon(raw); if (!code) return;
+  if (!PLAYER) { status('Choose a player first.', 'bad'); return; }
+  if (busy || (code === lastCode && Date.now() - lastAt < 6000)) return;      // same CD still in view
+  busy = true; lastCode = code; lastAt = Date.now();
+  try {
+    status('Looking up ' + code + '…');
+    const r = await fetch(API + 'barcodes/' + code, { cache:'no-store' });
+    if (r.status === 404) { status(code + ': not paired with an album yet. Pair it in CD Check.', 'bad'); addHist('✗', code, 'not paired'); return; }
+    if (!r.ok) throw new Error('save service HTTP ' + r.status);
+    const rec = await r.json();
+    if (rec.album_id == null) { status(code + ': ' + (rec.status === 'none' ? 'marked as not in the library.' : 'no library album yet (still rescanning?).'), 'bad'); addHist('✗', code, rec.status || 'no album'); return; }
+    await rpc(PLAYER, ['power', 1]);
+    await rpc(PLAYER, ['playlistcontrol', 'cmd:load', 'album_id:' + rec.album_id]);
+    status('Playing: ' + (rec.album || code), 'ok');
+    addHist('▶', (rec.album || code) + (rec.artist ? ' — ' + rec.artist : ''), code);
+    showNow(rec);
+  } catch (e) { status('Error: ' + e.message, 'bad'); lastAt = 0; }
+  finally { busy = false; }
+}
+function showNow(rec) {
+  $('nowcard').style.display = '';
+  $('nt').textContent = rec.album || ''; $('na').textContent = rec.artist || '';
+  const pn = $('player').selectedOptions[0]; $('nc').textContent = 'on ' + (pn ? pn.textContent : '');
+}
+function addHist(icon, text, code) {
+  HIST.unshift(`<li>${icon} ${esc(text)} <span class="m">${esc(code)}</span></li>`); HIST = HIST.slice(0, 15);
+  $('hist').innerHTML = HIST.join('');
+}
+const ctl = cmd => async () => { try { await rpc(PLAYER, cmd); } catch (e) { status('Error: ' + e.message, 'bad'); } };
+$('pp').onclick = ctl(['pause']); $('halt').onclick = ctl(['stop']);
+$('next').onclick = ctl(['playlist', 'index', '+1']); $('prev').onclick = ctl(['playlist', 'index', '-1']);
+$('manual').onsubmit = e => { e.preventDefault(); playCode($('code').value); $('code').value = ''; };
+
+// ---------- camera: stays open between scans ----------
+let stream = null, timer = null, wake = null;
+async function startScan() {
+  if (stream) return;
+  if (!window.isSecureContext) { status('Camera needs HTTPS (open https://hibou/cdplay.html).', 'bad'); return; }
+  let Det = window.BarcodeDetector;
+  if (!Det) {
+    try {
+      status('Loading barcode decoder…');
+      await new Promise((ok, bad) => { const s = document.createElement('script'); s.src = '/vendor/barcode-detector-3.2.3.js'; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
+      BarcodeDetectionAPI.setZXingModuleOverrides({ locateFile: (f, prefix) => f.endsWith('.wasm') ? '/vendor/zxing_reader.wasm' : prefix + f });
+      Det = BarcodeDetectionAPI.BarcodeDetector;
+    } catch (e) { status('Could not load barcode decoder. Type the digits instead.', 'bad'); return; }
+  }
+  let fmts = ['ean_13', 'upc_a', 'ean_8', 'upc_e', 'code_39', 'code_128', 'itf', 'codabar'];
+  try { const sup = await Det.getSupportedFormats(); fmts = fmts.filter(f => sup.includes(f)); } catch {}
+  const det = new Det({ formats: fmts });
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }); }
+  catch (e) { status('Camera error: ' + e.message, 'bad'); return; }
+  const v = $('cam'); v.srcObject = stream; v.style.display = 'block'; await v.play();
+  $('scan').style.display = 'none'; $('stop').style.display = '';
+  try { wake = await navigator.wakeLock?.request('screen'); } catch {}
+  status('Point the camera at a CD barcode…');
+  timer = setInterval(async () => {
+    if (busy) return;
+    try {
+      const codes = await det.detect(v);
+      if (codes.length) { if (navigator.vibrate) navigator.vibrate(60); playCode(codes[0].rawValue); }
+    } catch {}
+  }, 250);
+}
+function stopScan() {
+  clearInterval(timer); timer = null;
+  if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
+  try { wake?.release(); } catch {} wake = null;
+  $('cam').style.display = 'none'; $('scan').style.display = ''; $('stop').style.display = 'none';
+}
+$('scan').onclick = startScan; $('stop').onclick = () => { stopScan(); status(''); };
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); });
+
+loadPlayers().then(() => { if (PLAYER) status('Tap "Start scanning" to begin.'); });
+</script>
+</body>
+</html>
