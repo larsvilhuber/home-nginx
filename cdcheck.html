@@ -37,7 +37,9 @@
   button:disabled { opacity:.45; }
   .btnrow { display:flex; gap:8px; margin-top:6px; }
   .btnrow button { flex:1; }
+  html.embed h1, html.embed .sub { display:none; }
 </style>
+<script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
 </head>
 <body>
 <main>

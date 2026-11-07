@@ -36,7 +36,9 @@
   details summary { cursor:pointer; color:var(--mut); font-size:.9rem; }
   #status { color:var(--mut); font-size:.9rem; min-height:1.3em; }
   .btnrow { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; } .btnrow button { flex:1; min-width:110px; }
+  html.embed h1, html.embed .sub { display:none; }
 </style>
+<script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
 </head>
 <body>
 <main>

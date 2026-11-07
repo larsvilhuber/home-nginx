@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CD Library</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --acc:#2457d6; --bar:#fff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121214; --fg:#ececf1; --mut:#9a9aa6; --card:#1e1e22; --acc:#7ea2ff; --bar:#18181b; }
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; margin:0; }
+  body { background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; display:flex; flex-direction:column; }
+  header { flex:none; display:flex; align-items:center; gap:8px; padding:6px 8px; padding-top:max(6px, env(safe-area-inset-top)); background:var(--bar); border-bottom:1px solid #8883; position:relative; z-index:5; }
+  header h1 { flex:1; margin:0; font-size:1.05rem; }
+  .tabs { display:flex; gap:4px; }
+  .tabs button, #burger { font:inherit; border:0; border-radius:8px; padding:9px 13px; background:var(--card); color:var(--fg); cursor:pointer; }
+  .tabs button[aria-selected=true] { background:var(--acc); color:#fff; }
+  .ext { display:flex; gap:4px; }
+  .ext a { font-size:.9rem; border-radius:8px; padding:9px 11px; background:var(--card); color:var(--fg); text-decoration:none; }
+  #burger { display:none; font-size:1.2rem; line-height:1; }
+  .menu { display:none; }
+  main { flex:1; position:relative; min-height:0; }
+  iframe { position:absolute; inset:0; width:100%; height:100%; border:0; background:var(--bg); display:none; }
+  iframe.on { display:block; }
+  @media (max-width:640px) {
+    .tabs, .ext { display:none; }
+    #burger { display:block; }
+    .menu.open { display:flex; flex-direction:column; gap:6px; position:absolute; top:100%; left:0; right:0; padding:10px 12px 14px; background:var(--bar); border-bottom:1px solid #8883; box-shadow:0 8px 16px #0003; }
+    .menu a, .menu button { font:inherit; text-align:left; width:100%; padding:14px; border:0; border-radius:10px; background:var(--card); color:var(--fg); text-decoration:none; }
+    .menu button[aria-selected=true] { background:var(--acc); color:#fff; }
+    .menu hr { border:0; border-top:1px solid #8884; margin:4px 0; width:100%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>CD Library</h1>
+  <nav class="tabs" role="tablist" id="tabs"></nav>
+  <div class="ext" id="ext"></div>
+  <button id="burger" aria-label="Menu" aria-expanded="false">&#9776;</button>
+  <nav class="menu" id="menu"></nav>
+</header>
+<main id="views"></main>
+<script>
+const VIEWS = [
+  { id:'check',  label:'CD Check',   src:'/cdcheck.html' },
+  { id:'tag',    label:'CD Tag',     src:'/cdtag.html' },
+  { id:'review', label:'Tag Review', src:'/review.html' },
+];
+const EXT = [
+  { label:'CD Ripper',      href:'http://hibou:8086/' },
+  { label:'Squeeze server', href:'http://hibou:9000/' },
+];
+const $ = id => document.getElementById(id);
+const frames = {};
+function show(id, push) {
+  const v = VIEWS.find(x => x.id === id) || VIEWS[0];
+  if (!frames[v.id]) {                       // load on first visit, then keep alive (camera, queues, drafts)
+    const f = document.createElement('iframe');
+    f.src = v.src + '?embed=1'; f.title = v.label; f.allow = 'camera; clipboard-write';
+    $('views').append(f); frames[v.id] = f;
+  }
+  for (const k in frames) frames[k].classList.toggle('on', k === v.id);
+  document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-selected', b.dataset.view === v.id));
+  document.title = 'CD Library · ' + v.label;
+  if (push !== false) { try { history.replaceState(null, '', '#' + v.id); } catch {} }
+  closeMenu();
+}
+function closeMenu() { $('menu').classList.remove('open'); $('burger').setAttribute('aria-expanded', 'false'); }
+VIEWS.forEach(v => {
+  for (const host of [$('tabs'), $('menu')]) {
+    const b = document.createElement('button');
+    b.textContent = v.label; b.dataset.view = v.id; b.setAttribute('role', 'tab'); b.onclick = () => show(v.id);
+    host.append(b);
+  }
+});
+$('menu').append(document.createElement('hr'));
+EXT.forEach(e => {
+  for (const host of [$('ext'), $('menu')]) {
+    const a = document.createElement('a');
+    a.textContent = e.label + ' ↗'; a.href = e.href; a.target = '_blank'; a.rel = 'noopener';
+    host.append(a);
+  }
+});
+$('burger').onclick = () => { const o = $('menu').classList.toggle('open'); $('burger').setAttribute('aria-expanded', o); };
+addEventListener('hashchange', () => show(location.hash.slice(1), false));
+show(location.hash.slice(1), false);
+</script>
+</body>
+</html>

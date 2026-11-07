@@ -35,12 +35,14 @@
   .meter > div { height:100%; background:var(--warn); }
   .meter.full > div { background:var(--ok); }
   .ready { font-weight:700; color:var(--ok); }
+  html.embed h1, html.embed .sub { display:none; }
 </style>
+<script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
 </head>
 <body>
 <main>
   <h1>CD Tag</h1>
-  <div class="sub">For CDs that have no barcode: find the album, give it a code, and print the codes in batches. Scan the printed code in <a href="/cdcheck.html">CD Check</a> later.</div>
+  <div class="sub">For CDs that have no barcode: find the album, give it a code, and print the codes in batches. Scan the printed code in <a href="/cd.html#check" target="_top">CD Check</a> later.</div>
 
   <div id="after" class="card" style="display:none;border:2px solid var(--warn)">
     <div><b>Did the sheet print?</b> <span class="m" id="afterinfo"></span></div>
