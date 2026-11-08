@@ -3,14 +3,17 @@
 Why: the browser apps (`cdcheck.html`, `review.html`) were hitting musicbrainz.org directly, with
 no User-Agent and no rate control, so MusicBrainz often answered 503. Now they call `/mb/...` on
 this server, which caches answers (30 days), sends a proper User-Agent and spaces cache misses
-1 second apart. The pages also retry 502/503/504 with backoff.
+1 second apart. The pages also retry 502/503/504 with backoff. The ARM container (CD ripper) uses the
+same proxy and cache, so a disc looked up in ARM is instant in CD Check and vice versa only when the
+request URL is identical (ARM asks for XML, the web apps for JSON, so mostly they do not share entries).
 
 ## Where things live
 
 | What | Where |
 |------|-------|
 | Config (source of truth) | `/home/www/nginx/musicbrainz-proxy.conf`, `musicbrainz-location.conf` (this repo) |
-| Symlinks nginx reads | `/etc/nginx/conf.d/musicbrainz-proxy.conf`, `/etc/nginx/snippets/musicbrainz-location.conf` |
+| Symlinks nginx reads | `/etc/nginx/conf.d/musicbrainz-proxy.conf`, `/etc/nginx/snippets/musicbrainz-location.conf`, `/etc/nginx/snippets/musicbrainz-cache-common.conf` |
+| ARM listener | `*:8083` `/ws/2/` (docker/private source addresses only); the ARM container reaches it as `mbproxy:8083` — see `/home/arm/build/patch_musicbrainz.py` and `/home/arm/docker-compose.yml` |
 | Hook into the site | one `include /etc/nginx/snippets/musicbrainz-location.conf;` line in the `127.0.0.1:8081` server block of `/etc/nginx/sites-available/default` |
 | Cache data | `/home/nginx-mb/cache` (owned by `www-data`, capped at 2 GB, entries expire after 90 days unused) |
 | Outbound queue | internal server on `127.0.0.1:8082` (1 request/second to musicbrainz.org) |
@@ -23,6 +26,7 @@ Editing the repo files changes the live config after `sudo nginx -t && sudo syst
 sudo mkdir -p /home/nginx-mb/cache && sudo chown -R www-data: /home/nginx-mb
 sudo ln -sf /home/www/nginx/musicbrainz-proxy.conf    /etc/nginx/conf.d/musicbrainz-proxy.conf
 sudo ln -sf /home/www/nginx/musicbrainz-location.conf /etc/nginx/snippets/musicbrainz-location.conf
+sudo ln -sf /home/www/nginx/musicbrainz-cache-common.conf /etc/nginx/snippets/musicbrainz-cache-common.conf
 # add to the 127.0.0.1:8081 server block in /etc/nginx/sites-available/default:
 #     include /etc/nginx/snippets/musicbrainz-location.conf;
 sudo nginx -t && sudo systemctl reload nginx
