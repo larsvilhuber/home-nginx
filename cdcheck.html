@@ -70,7 +70,19 @@
 <script>
 // Lyrion JSON-RPC is reached through a same-origin nginx proxy (no CORS headers upstream).
 const LMS = '/lms/jsonrpc.js';
-const MB  = 'https://musicbrainz.org/ws/2/release/';
+const MB  = '/mb/release/';          // same-origin caching proxy (see nginx/README.md); it adds the User-Agent and paces requests
+async function mbFetch(url) {        // retry transient failures (503 = MusicBrainz throttling) with backoff
+  let err;
+  for (let i = 0; i < 4; i++) {
+    try {
+      const r = await fetch(url);
+      if (r.ok || (r.status !== 503 && r.status !== 502 && r.status !== 504)) return r;
+      err = new Error('MusicBrainz HTTP ' + r.status);
+    } catch (e) { err = e; }
+    await new Promise(ok => setTimeout(ok, 1500 * (i + 1)));
+  }
+  throw err;
+}
 const MUSIC_ROOT = '/media/space2/music';   // host path of the library (mounted as /music in the container)
 
 const $ = id => document.getElementById(id);
@@ -150,7 +162,7 @@ const cleanCode = s => String(s || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(
 const isUPC = c => /^\d{8,14}$/.test(c);          // retail UPC/EAN; anything else is a club / catalog code
 async function mbLookup(code) {
   const q = isUPC(code) ? 'barcode:(' + barcodeVariants(code).join(' OR ') + ')' : 'catno:"' + code + '"';
-  const r = await fetch(MB + '?fmt=json&limit=10&query=' + encodeURIComponent(q));
+  const r = await mbFetch(MB + '?fmt=json&limit=10&query=' + encodeURIComponent(q));
   if (!r.ok) throw new Error('MusicBrainz HTTP ' + r.status);
   const j = await r.json();
   return (j.releases || []).map(x => ({

@@ -61,7 +61,7 @@
 </main>
 <script>
 const API = '/cdcheck-api/review/';
-const MB  = 'https://musicbrainz.org/ws/2/';
+const MB  = '/mb/';                  // same-origin caching proxy (see nginx/README.md)
 let QUEUE = [], DEC = {}, VIEW = [], POS = 0, SEL = null, EXTRA = [];
 const $ = id => document.getElementById(id);
 const el = (tag, attrs = {}, ...kids) => {
@@ -77,10 +77,19 @@ const norm = s => String(s || '').normalize('NFKD').replace(/[^\w ]/g, '').toLow
 let mbChain = Promise.resolve();
 function mb(path, params) {
   const run = async () => {
-    await new Promise(r => setTimeout(r, 1100));
-    const u = new URL(MB + path); u.searchParams.set('fmt', 'json');
+    const u = new URL(MB + path, location.origin); u.searchParams.set('fmt', 'json');   // the proxy paces requests; no client-side delay needed
     for (const [k, v] of Object.entries(params || {})) u.searchParams.set(k, v);
-    const r = await fetch(u); if (!r.ok) throw new Error('MusicBrainz ' + r.status); return r.json();
+    let err;
+    for (let i = 0; i < 4; i++) {                                                      // retry throttling (503) with backoff
+      try {
+        const r = await fetch(u);
+        if (r.ok) return r.json();
+        if (![502, 503, 504].includes(r.status)) throw Object.assign(new Error('MusicBrainz ' + r.status), { final: true });
+        err = new Error('MusicBrainz ' + r.status);
+      } catch (e) { if (e.final) throw e; err = e; }
+      await new Promise(ok => setTimeout(ok, 1500 * (i + 1)));
+    }
+    throw err;
   };
   const p = mbChain.then(run, run); mbChain = p.catch(() => {}); return p;
 }
