@@ -42,7 +42,7 @@
 <body>
 <main>
   <h1>CD Tag</h1>
-  <div class="sub">For CDs that have no barcode: find the album, give it a code, and print the codes in batches. Scan the printed code in <a href="/cd.html#check" target="_top">CD Check</a> later.</div>
+  <div class="sub">For CDs that have no barcode: pick the album (in the library, or just ripped and waiting below), give it a code, and print the codes in batches. Scan the printed code in <a href="/cd.html#check" target="_top">CD Check</a> later; for a ripped album that is where you import it.</div>
 
   <div id="after" class="card" style="display:none;border:2px solid var(--warn)">
     <div><b>Did the sheet print?</b> <span class="m" id="afterinfo"></span></div>
@@ -109,7 +109,7 @@ function code128svg(text) {
 }
 
 // ---------- library + what already has a barcode ----------
-let LIB = null, PAIRS = new Map(), LAB = { queue:[], printed:{}, next:1 };
+let LIB = null, PAIRS = new Map(), RPAIRS = new Map(), LAB = { queue:[], printed:{}, next:1 };
 async function library() {
   if (LIB) return LIB;
   status('Loading library list…');
@@ -124,44 +124,67 @@ async function folderOf(id) {
 async function refresh() {
   const [b, l] = await Promise.all([api('barcodes'), api('labels')]);
   PAIRS = new Map();                                         // album_id -> [codes]
-  for (const [code, r] of Object.entries(b)) if (r.album_id != null) { (PAIRS.get(r.album_id) || PAIRS.set(r.album_id, []).get(r.album_id)).push(code); }
+  RPAIRS = new Map();                                        // ARM folder ("Artist/Album", ripped, not yet in the library) -> [codes]
+  for (const [code, r] of Object.entries(b)) {
+    if (r.album_id != null) { (PAIRS.get(r.album_id) || PAIRS.set(r.album_id, []).get(r.album_id)).push(code); }
+    if (r.arm_folder) { (RPAIRS.get(r.arm_folder) || RPAIRS.set(r.arm_folder, []).get(r.arm_folder)).push(code); }
+  }
   LAB = l; drawQueue(); drawPending();
 }
 
 // ---------- search ----------
 async function search(q) {
   $('out').innerHTML = '';
-  const toks = norm(q).split(' ').filter(Boolean); if (!toks.length) return;
+  const toks = norm(q).split(' ').filter(Boolean);           // no search words: just list what was ripped recently
   try {
     await refresh();
     const only = $('onlyNo').checked;
-    const all = (await library()).filter(a => { const h = norm(a.album + ' ' + a.artist); return toks.every(t => h.includes(t)); });
-    const hits = all.filter(a => !only || !PAIRS.has(a.id)).slice(0, 15);
-    const hidden = all.length - all.filter(a => !only || !PAIRS.has(a.id)).length;
-    $('out').innerHTML = hits.map(a => {
-      const codes = PAIRS.get(a.id) || [], mine = codes.find(c => c.startsWith('LV'));
-      const state = mine ? (LAB.queue.some(x => x.code === mine) ? ['maybe', mine + ' queued'] : ['have', mine + ' printed'])
+    const card = (title, sub, codes, idAttr, tag) => {        // one album: its barcode state and the label button
+      const mine = codes.find(c => c.startsWith('LV')), queued = mine && LAB.queue.some(x => x.code === mine);
+      const state = mine ? (queued ? ['maybe', mine + ' queued'] : ['have', mine + ' printed'])
                   : codes.length ? ['have', 'has barcode ' + codes[0]] : ['miss', 'no barcode'];
-      const btn = mine ? (LAB.queue.some(x => x.code === mine) ? '' : `<button class="sm sec" data-act="re" data-id="${a.id}">Print again</button>`)
-                       : `<button class="sm" data-act="new" data-id="${a.id}">${codes.length ? 'Label anyway' : 'Make label'}</button>`;
-      return `<div class="card"><div class="item"><div><div class="t">${esc(a.album)}</div><div class="m">${esc(a.artist)}${a.year ? ' · ' + a.year : ''}</div>
-        <span class="badge ${state[0]}">${esc(state[1])}</span></div><div>${btn}</div></div></div>`;
-    }).join('') || '<div class="card">Nothing found' + (hidden ? ` (${hidden} hidden because they already have a barcode)` : '') + '.</div>';
-    status(hits.length + ' album(s)' + (hidden ? `, ${hidden} hidden (already have a barcode)` : ''));
+      const btn = mine ? (queued ? '' : `<button class="sm sec" data-act="re" ${idAttr}>Print again</button>`)
+                       : `<button class="sm" data-act="new" ${idAttr}>${codes.length ? 'Label anyway' : 'Make label'}</button>`;
+      return `<div class="card"><div class="item"><div><div class="t">${esc(title)}</div><div class="m">${esc(sub)}</div>
+        <span class="badge ${state[0]}">${esc(state[1])}</span>${tag || ''}</div><div>${btn}</div></div></div>`;
+    };
+    let html = '', nLib = 0, hidLib = 0;
+    if (toks.length) {
+      const all = (await library()).filter(a => { const h = norm(a.album + ' ' + a.artist); return toks.every(t => h.includes(t)); });
+      const hits = all.filter(a => !only || !PAIRS.has(a.id)).slice(0, 15);
+      nLib = hits.length; hidLib = all.length - all.filter(a => !only || !PAIRS.has(a.id)).length;
+      html += '<h2>In the library</h2>' + (hits.map(a => card(a.album, a.artist + (a.year ? ' · ' + a.year : ''), PAIRS.get(a.id) || [], `data-id="${a.id}"`)).join('')
+            || '<div class="card">Nothing found' + (hidLib ? ` (${hidLib} hidden because they already have a barcode)` : '') + '.</div>');
+    }
+    let rips = []; try { rips = await api('ripped'); } catch (e) { html += `<div class="card m">Could not list ripped albums: ${esc(e.message)}</div>`; }
+    const rall = rips.filter(r => { const h = norm(r.album + ' ' + r.artist); return toks.every(t => h.includes(t)); }).sort((a, b) => b.mtime - a.mtime);
+    const rhits = rall.filter(r => !only || !RPAIRS.has(r.rel)), hidRip = rall.length - rhits.length;
+    html += '<h2>Ripped, not yet in the library</h2>' + (rhits.map(r => card(r.album, r.artist + ' · ' + r.tracks + ' tracks', RPAIRS.get(r.rel) || [], `data-rel="${esc(r.rel)}"`,
+              ' <span class="badge" style="background:#7b3fc4">ripped</span>')).join('')
+            || '<div class="card">Nothing ripped' + (toks.length ? ' matches' : ' is waiting') + (hidRip ? ` (${hidRip} hidden because they already have a barcode)` : '') + '.</div>');
+    $('out').innerHTML = html;
+    status((toks.length ? nLib + ' library album(s), ' : '') + rhits.length + ' ripped album(s)' + (hidLib + hidRip ? `, ${hidLib + hidRip} hidden (already have a barcode)` : ''));
   } catch (e) { status('Error: ' + e.message); }
 }
 $('f').onsubmit = e => { e.preventDefault(); search($('q').value); };
 $('out').addEventListener('click', async e => {
   const b = e.target.closest('button[data-act]'); if (!b) return;
-  const a = (LIB || []).find(x => x.id == b.dataset.id); if (!a) return;
+  const requeue = b.dataset.act === 're';
   b.disabled = true;
   try {
-    const r = await api('labels', 'POST', { album_id: a.id, album: a.album, artist: a.artist, folder: await folderOf(a.id), requeue: b.dataset.act === 're' });
-    status(`${r.code} queued for ${a.album}.`);
+    let body, name;
+    if (b.dataset.rel) {                                      // ripped by ARM: the service keys it by its folder; scanning the tag later offers the import
+      body = { arm_folder: b.dataset.rel, requeue }; name = b.dataset.rel.split('/').pop();
+    } else {
+      const a = (LIB || []).find(x => x.id == b.dataset.id); if (!a) { b.disabled = false; return; }
+      body = { album_id: a.id, album: a.album, artist: a.artist, folder: await folderOf(a.id), requeue }; name = a.album;
+    }
+    const r = await api('labels', 'POST', body);
+    status(`${r.code} queued for ${name}.`);
     await search($('q').value);
   } catch (err) { b.disabled = false; status('Error: ' + err.message); }
 });
-$('onlyNo').onchange = () => { if ($('q').value.trim()) search($('q').value); };
+$('onlyNo').onchange = () => search($('q').value);
 
 // ---------- queue + sheet ----------
 let PRINTING = [];
@@ -184,7 +207,7 @@ function drawQueue() {
 }
 $('qlist').addEventListener('click', async e => {
   const c = e.target.dataset.rm; if (!c) return;
-  try { await api('labels/' + c, 'DELETE'); await refresh(); if ($('q').value.trim()) search($('q').value); } catch (err) { status('Error: ' + err.message); }
+  try { await api('labels/' + c, 'DELETE'); await refresh(); search($('q').value); } catch (err) { status('Error: ' + err.message); }
 });
 let paper = 'letter';
 try { paper = localStorage.getItem('cdtag-paper') || 'letter'; } catch {}
@@ -207,7 +230,7 @@ $('done').onclick = async () => {
 };
 $('notyet').onclick = async () => { try { await api('labels/dismiss', 'POST', {}); PRINTING = []; await refresh(); } catch (e) { status('Error: ' + e.message); } };
 
-refresh().catch(e => status('Error: ' + e.message));
+search('');                                   // no search yet: show what ARM has ripped and not yet imported
 </script>
 </body>
 </html>
