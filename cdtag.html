@@ -45,7 +45,7 @@
   <div class="sub">For CDs that have no barcode: pick the album (in the library, or just ripped and waiting below), give it a code, and print the codes in batches. Scan the printed code in <a href="/cd.html#check" target="_top">CD Check</a> later; for a ripped album that is where you import it.</div>
 
   <div id="after" class="card" style="display:none;border:2px solid var(--warn)">
-    <div><b>Did the sheet print?</b> <span class="m" id="afterinfo"></span></div>
+    <div><b id="afterq">Did the sheet print?</b> <span class="m" id="afterinfo"></span></div>
     <div class="btnrow row"><button id="done">Yes, mark printed</button><button class="sec" id="notyet">No, keep queued</button><a id="reopen" target="_blank" class="m">open PDF again</a></div>
   </div>
   <form class="row" id="f">
@@ -192,7 +192,13 @@ let PRINTING = [];
 function drawPending() {
   const p = LAB.pending;
   $('after').style.display = p ? 'block' : 'none';
-  if (p) { PRINTING = p.codes; $('afterinfo').textContent = p.codes.length + ' labels (' + p.codes[0] + (p.codes.length > 1 ? '…' + p.codes[p.codes.length - 1] : '') + ')'; $('reopen').href = API + p.url; }
+  if (p) {
+    PRINTING = p.codes;
+    $('afterq').textContent = p.via === 'labeller' ? 'Did the labels come out of the label printer?' : 'Did the sheet print?';
+    $('afterinfo').textContent = p.codes.length + ' label' + (p.codes.length > 1 ? 's' : '') + ' (' + p.codes[0] + (p.codes.length > 1 ? '…' + p.codes[p.codes.length - 1] : '') + ')';
+    $('reopen').style.display = p.url ? '' : 'none';          // only a sheet has a PDF to reopen
+    if (p.url) $('reopen').href = API + p.url;
+  }
 }
 function drawQueue() {
   const n = LAB.queue.length, ready = n >= SHEET;
@@ -202,11 +208,11 @@ function drawQueue() {
   $('print').disabled = n === 0;
   $('print').className = ready ? '' : 'sec';
   $('print').textContent = ready ? `Print sheet (${SHEET})` : `Print anyway (${n})`;
-  $('lprint').disabled = n === 0;
+  $('lprint').disabled = n === 0 || !!LAB.pending;          // answer the yellow box first, or the same labels would print twice
   $('lprint').textContent = n > 1 ? `Print on labeller (${n})` : 'Print on labeller';
   $('qhint').textContent = ready ? 'The sheet opens as a PDF to print. Cut along the dashed lines and tape each strip to its CD.' : (n ? 'Not a full sheet yet. "Print anyway" prints just these, leaving the rest of the page blank.' : '');
   $('qlist').innerHTML = LAB.queue.map(q => `<div class="item"><div><div class="t">${esc(q.album)}</div><div class="m">${esc(q.artist)} · <b>${esc(q.code)}</b></div></div>
-    <button class="sm" data-lp="${esc(q.code)}" title="print just this label on the label printer">Label</button>
+    <button class="sm" data-lp="${esc(q.code)}" title="print just this label on the label printer"${LAB.pending ? ' disabled' : ''}>Label</button>
     <button class="sm sec" data-rm="${esc(q.code)}">Remove</button></div>`).join('');
 }
 // Straight to the Supvan label printer (one label per CD). Labels that come out move to "printed"; a failure stops the run
@@ -219,8 +225,10 @@ async function labeller(codes) {
     const j = await r.json().catch(() => ({}));
     await refresh();
     if (j.error) throw new Error(j.error);
-    if (j.failed && j.failed.length) status(`Printed ${j.printed.length}, then stopped: ${j.failed[0].code}: ${j.failed[0].error}. The rest stay queued.`);
-    else status(`Printed ${j.printed.length} label(s) on the label printer.`);
+    const n = (j.sent || []).length;
+    if (j.failed && j.failed.length) status(`Sent ${n}, then stopped: ${j.failed[0].code}: ${j.failed[0].error}. The rest stay queued. Confirm the ${n} that printed in the yellow box.`);
+    else status(`Sent ${n} label(s) to the label printer. Please confirm below that they came out.`);
+    if (n) $('after').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     search($('q').value);
   } catch (e) { status('Error: ' + e.message); drawQueue(); }
 }
