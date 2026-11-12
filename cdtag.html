@@ -62,6 +62,7 @@
     <div class="meter" id="meter"><div></div></div>
     <div class="row" style="margin:6px 0">
       <button id="print">Print</button>
+      <button id="lprint" class="sec" title="Print one label per CD, straight onto the Supvan T50M Pro label printer (40 x 30 mm tape)">Print on labeller</button>
       <select id="paper" title="paper size"><option value="letter">Letter</option><option value="a4">A4</option></select>
     </div>
     <div class="m" id="qhint"></div>
@@ -201,11 +202,31 @@ function drawQueue() {
   $('print').disabled = n === 0;
   $('print').className = ready ? '' : 'sec';
   $('print').textContent = ready ? `Print sheet (${SHEET})` : `Print anyway (${n})`;
+  $('lprint').disabled = n === 0;
+  $('lprint').textContent = n > 1 ? `Print on labeller (${n})` : 'Print on labeller';
   $('qhint').textContent = ready ? 'The sheet opens as a PDF to print. Cut along the dashed lines and tape each strip to its CD.' : (n ? 'Not a full sheet yet. "Print anyway" prints just these, leaving the rest of the page blank.' : '');
   $('qlist').innerHTML = LAB.queue.map(q => `<div class="item"><div><div class="t">${esc(q.album)}</div><div class="m">${esc(q.artist)} · <b>${esc(q.code)}</b></div></div>
+    <button class="sm" data-lp="${esc(q.code)}" title="print just this label on the label printer">Label</button>
     <button class="sm sec" data-rm="${esc(q.code)}">Remove</button></div>`).join('');
 }
+// Straight to the Supvan label printer (one label per CD). Labels that come out move to "printed"; a failure stops the run
+// and leaves the rest queued.
+async function labeller(codes) {
+  const btns = [$('lprint'), ...document.querySelectorAll('[data-lp]')]; btns.forEach(b => b.disabled = true);
+  status(codes ? 'Printing ' + codes[0] + '…' : 'Printing ' + LAB.queue.length + ' label(s)… (a few seconds each)');
+  try {
+    const r = await fetch(API + 'labels/labeller', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(codes ? { codes } : {}) });
+    const j = await r.json().catch(() => ({}));
+    await refresh();
+    if (j.error) throw new Error(j.error);
+    if (j.failed && j.failed.length) status(`Printed ${j.printed.length}, then stopped: ${j.failed[0].code}: ${j.failed[0].error}. The rest stay queued.`);
+    else status(`Printed ${j.printed.length} label(s) on the label printer.`);
+    search($('q').value);
+  } catch (e) { status('Error: ' + e.message); drawQueue(); }
+}
+$('lprint').onclick = () => labeller(null);
 $('qlist').addEventListener('click', async e => {
+  if (e.target.dataset.lp) return labeller([e.target.dataset.lp]);
   const c = e.target.dataset.rm; if (!c) return;
   try { await api('labels/' + c, 'DELETE'); await refresh(); search($('q').value); } catch (err) { status('Error: ' + err.message); }
 });
