@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tag</title>
+<link rel="stylesheet" href="vendor/fontawesome-6.7.2/css/all.min.css">
+<style>
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --ok:#1b7f3b; --no:#b3261e; --warn:#9a6700; --acc:#2457d6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121214; --fg:#ececf1; --mut:#9a9aa6; --card:#1e1e22; --ok:#4cc26b; --no:#ff6b61; --warn:#e3b341; --acc:#7ea2ff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; }
+  main { max-width:680px; margin:0 auto; padding:16px; }
+  [hidden] { display:none !important; }
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  h2 { font-size:1.05rem; margin:22px 0 6px; }
+  h3 { font-size:.95rem; margin:12px 0 4px; }
+  .sub { color:var(--mut); font-size:.85rem; margin-bottom:12px; }
+  .row { display:flex; gap:8px; margin:8px 0; align-items:center; flex-wrap:wrap; }
+  input[type=text], input[type=search], input[type=number], textarea { flex:1; min-width:0; padding:9px; font-size:1rem; border:1px solid var(--mut); border-radius:8px; background:var(--bg); color:var(--fg); font-family:inherit; }
+  input.yr { flex:none; width:6em; }
+  select { padding:8px; font-size:.9rem; border-radius:8px; border:1px solid var(--mut); background:var(--bg); color:var(--fg); }
+  button { padding:10px 14px; font-size:1rem; border:0; border-radius:8px; background:var(--acc); color:#fff; }
+  button.sec { background:var(--card); color:var(--fg); border:1px solid #8884; }
+  button.sm { padding:6px 10px; font-size:.85rem; }
+  button.warn { background:var(--warn); }
+  button:disabled { opacity:.45; }
+  .card { background:var(--card); border-radius:10px; padding:12px; margin:10px 0; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:99px; font-weight:600; font-size:.8rem; color:#fff; background:var(--mut); }
+  .have { background:var(--ok); } .miss { background:var(--no); } .maybe { background:var(--warn); }
+  .t { font-weight:600; } .m { color:var(--mut); font-size:.85rem; word-break:break-all; }
+  .bad { color:var(--no); } .good { color:var(--ok); } .hint { color:var(--warn); font-size:.82rem; }
+  .status { color:var(--mut); font-size:.9rem; min-height:1.3em; }
+  .status.bad { color:var(--no); } .status.good { color:var(--ok); }
+  .item { display:flex; gap:10px; align-items:center; padding:8px 0; border-top:1px solid #8884; }
+  .item:first-child { border-top:0; }
+  .item > div:first-child { flex:1; min-width:0; }
+  .item.grey { opacity:.5; }
+  .rip { cursor:pointer; } .rip.sel { outline:2px solid var(--acc); border-radius:8px; }
+  table { width:100%; border-collapse:collapse; font-size:.9rem; }
+  td, th { text-align:left; padding:6px 4px; border-top:1px solid #8884; vertical-align:top; }
+  .res { display:flex; gap:10px; padding:8px 0; border-top:1px solid #8884; cursor:pointer; }
+  .res:first-child { border-top:0; } .res:hover { background:#8881; }
+  .res img { width:46px; height:69px; object-fit:cover; border-radius:4px; background:#8883; flex:none; }
+  .res.sel { background:color-mix(in srgb, var(--acc) 14%, var(--bg)); }
+  .lbl { font-size:.8rem; color:var(--mut); display:block; margin-top:6px; }
+  video { width:100%; max-height:36vh; background:#000; border-radius:10px; display:none; object-fit:cover; margin:6px 0; }
+  .meter { height:10px; background:#8883; border-radius:99px; overflow:hidden; margin:8px 0; }
+  .meter > div { height:100%; background:var(--warn); }
+  .meter.full > div { background:var(--ok); }
+  .ready { font-weight:700; color:var(--ok); }
+  pre { white-space:pre-wrap; word-break:break-word; font-size:.8rem; background:var(--bg); padding:8px; border-radius:8px; max-height:220px; overflow:auto; }
+  label.chk { font-size:.9rem; color:var(--mut); display:flex; gap:6px; align-items:center; }
+  html.embed h1, html.embed .sub { display:none; }
+  /* CD | DVD tabs */
+  .ptabs { display:flex; gap:6px; margin:0 0 12px; border-bottom:1px solid #8884; }
+  .ptabs button { flex:1; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 12px; font:inherit; font-weight:600;
+                  background:none; color:var(--mut); border:0; border-bottom:3px solid transparent; border-radius:8px 8px 0 0; cursor:pointer; }
+  .ptabs button[aria-selected=true] { color:var(--acc); border-bottom-color:var(--acc); background:var(--card); }
+  h2 .fa-solid { color:var(--mut); margin-right:4px; }
+</style>
+<script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
+</head>
+<body>
+<main>
+  <h1>Tag</h1>
+  <div class="sub">Give CDs and films a code, import ripped DVDs, and print the labels in batches.</div>
+  <div class="ptabs" role="tablist" aria-label="Medium">
+    <button type="button" role="tab" data-tab="cd" aria-controls="pane-cd"><i class="fa-solid fa-compact-disc" aria-hidden="true"></i> CD</button>
+    <button type="button" role="tab" data-tab="dvd" aria-controls="pane-dvd"><i class="fa-solid fa-film" aria-hidden="true"></i> DVD</button>
+  </div>
+  <div id="status" class="status"></div>
+
+  <div id="after" class="card" style="display:none;border:2px solid var(--warn)">
+    <div><b id="afterq">Did the sheet print?</b> <span class="m" id="afterinfo"></span></div>
+    <div class="row"><button id="done">Yes, mark printed</button><button class="sec" id="notyet">No, keep queued</button><a id="reopen" target="_blank" class="m">open PDF again</a></div>
+  </div>
+
+  <!-- ===== CD (was cdtag.html) ===== -->
+  <section id="pane-cd" data-pane="cd" role="tabpanel" hidden>
+    <div class="m">For CDs that have no barcode: pick the album (in the library, or just ripped and waiting below), give it a code, and print the codes in batches. Scan the printed code in <a href="check.html?tab=cd" target="_top" data-hub="check/cd">Check (CD)</a> later; for a ripped album that is where you import it.</div>
+    <form class="row" id="f">
+      <input type="search" id="q" placeholder="search artist / album" autocomplete="off">
+      <button>Search</button>
+    </form>
+    <label class="chk"><input type="checkbox" id="onlyNo" checked> hide albums that already have a barcode</label>
+    <div id="out"></div>
+  </section>
+
+  <!-- ===== DVD (was dvdtag.html) ===== -->
+  <section id="pane-dvd" data-pane="dvd" role="tabpanel" hidden>
+    <div class="m">Import a DVD that ARM has ripped into the film library, or just catalogue a disc you own. Check the result afterwards in <a href="check.html?tab=dvd" target="_top" data-hub="check/dvd">Check (DVD)</a>.</div>
+
+    <h2>1. Ripped, waiting to import</h2>
+    <div class="row"><button class="sec sm" id="reload">Refresh</button><span class="m" id="rcount"></span></div>
+    <div id="ripped"></div>
+
+    <div id="work" style="display:none">
+      <h2>2. Files</h2>
+      <div class="card"><div class="m" id="armline"></div><table id="files"></table></div>
+
+      <h2>3. Identify the film</h2>
+      <div class="card" id="mainid"></div>
+      <div id="others"></div>
+
+      <h2>4. Code</h2>
+      <div class="card" id="codeimp"></div>
+
+      <div class="row"><button id="preview" class="sec">Preview</button><button id="import" disabled>Import</button></div>
+      <div id="vers"></div>
+      <div id="plan"></div>
+      <div id="prog"></div>
+    </div>
+
+    <h2>Catalogue only (not ripped)</h2>
+    <div class="card" id="cat">
+      <div class="row">
+        <select id="ckind"><option>dvd</option><option>bluray</option><option>vhs</option><option>vinyl</option><option>cassette</option><option>other</option></select>
+        <input type="text" id="ctitle" placeholder="title">
+      </div>
+      <div class="row"><input type="text" id="ccreator" placeholder="creator / director"><input type="number" class="yr" id="cyear" placeholder="year"></div>
+      <div class="row"><input type="text" id="ccatno" placeholder="catalogue no."></div>
+      <div class="row"><textarea id="cnotes" rows="2" placeholder="notes"></textarea></div>
+      <div id="csearch"></div>
+      <div id="ccode"></div>
+      <div class="row"><button id="cadd">Add to catalogue</button></div>
+      <div id="cout"></div>
+    </div>
+    <video id="cam" playsinline muted></video>
+  </section>
+
+  <!-- ===== shared ===== -->
+  <h2><i class="fa-solid fa-print" aria-hidden="true"></i>Print queue <span class="m">(CD and DVD labels)</span></h2>
+  <div class="card" id="qcard">
+    <div id="qhead"></div>
+    <div class="meter" id="meter"><div></div></div>
+    <div class="row">
+      <button id="print">Print</button>
+      <button id="lprint" class="sec" title="One label per item on the Supvan T50M Pro label printer (40 x 30 mm tape)">Print on labeller</button>
+      <select id="paper" title="paper size"><option value="letter">Letter</option><option value="a4">A4</option></select>
+    </div>
+    <div class="m" id="qhint"></div>
+    <div class="m">Every sheet is saved as a PDF in <code>/home/squeezebox/cdcheck-api/sheets/</code>, so you can print it again if something goes wrong.</div>
+    <div id="qlist"></div>
+  </div>
+</main>
+
+<script src="media-ui.js"></script>
+<script>
+// ===== shared: status line + print queue (one queue for CD and DVD labels; same cdcheck-api endpoints) =====
+const TAG = (() => {
+const API = '/cdcheck-api/', SHEET = 18;      // labels per sheet (2 columns x 9 rows)
+const $ = id => document.getElementById(id);
+const esc = MediaUI.esc;
+const status = (t, cls) => { $('status').textContent = t; $('status').className = 'status ' + (cls || ''); };
+async function apiOk(path, method = 'GET', body) {
+  const r = await fetch(API + path, { method, cache:'no-store', headers: body ? { 'Content-Type':'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+  return j;
+}
+const HOOKS = [];
+let LAB = { queue:[], printed:{}, next:1 }, PRINTING = [];
+function setLabels(l) { LAB = l; drawQueue(); drawPending(); }
+async function refresh() { setLabels(await apiOk('labels')); }
+const changed = () => HOOKS.forEach(f => { try { f(); } catch {} });
+function drawPending() {
+  const p = LAB.pending;
+  $('after').style.display = p ? 'block' : 'none';
+  if (p) {
+    PRINTING = p.codes;
+    $('afterq').textContent = p.via === 'labeller' ? 'Did the labels come out of the label printer?' : 'Did the sheet print?';
+    $('afterinfo').textContent = p.codes.length + ' label' + (p.codes.length > 1 ? 's' : '') + ' (' + p.codes[0] + (p.codes.length > 1 ? '…' + p.codes[p.codes.length - 1] : '') + ')';
+    $('reopen').style.display = p.url ? '' : 'none';
+    if (p.url) $('reopen').href = API + p.url;
+  }
+}
+function drawQueue() {
+  const n = LAB.queue.length, ready = n >= SHEET;
+  $('qhead').innerHTML = n === 0 ? 'Nothing waiting.' : ready ? `<span class="ready">Sheet ready: ${n} labels waiting</span> (${SHEET} fit on a sheet)` : `${n} of ${SHEET} labels for a full sheet`;
+  $('meter').className = 'meter' + (ready ? ' full' : ''); $('meter').firstElementChild.style.width = Math.min(100, n / SHEET * 100) + '%';
+  $('print').disabled = n === 0; $('print').className = ready ? '' : 'sec';
+  $('print').textContent = ready ? `Print sheet (${SHEET})` : `Print anyway (${n})`;
+  $('lprint').disabled = n === 0 || !!LAB.pending;
+  $('lprint').textContent = n > 1 ? `Print on labeller (${n})` : 'Print on labeller';
+  $('qhint').textContent = ready ? 'The sheet opens as a PDF to print. Cut along the dashed lines and tape each strip to its case.' : (n ? 'Not a full sheet yet. "Print anyway" prints just these, leaving the rest of the page blank.' : '');
+  $('qlist').innerHTML = LAB.queue.map(q => `<div class="item"><div><div class="t">${esc(q.album || q.title || q.code)}</div><div class="m">${esc(q.artist || q.creator || '')} · <b>${esc(q.code)}</b></div></div>
+    <button class="sm" data-lp="${esc(q.code)}"${LAB.pending ? ' disabled' : ''}>Label</button><button class="sm sec" data-rm="${esc(q.code)}">Remove</button></div>`).join('');
+}
+async function labeller(codes) {
+  const btns = [$('lprint'), ...document.querySelectorAll('[data-lp]')]; btns.forEach(b => b.disabled = true);
+  status(codes ? 'Printing ' + codes[0] + '…' : 'Printing ' + LAB.queue.length + ' label(s)… (a few seconds each)');
+  try {
+    const r = await fetch(API + 'labels/labeller', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(codes ? { codes } : {}) });
+    const j = await r.json().catch(() => ({}));
+    await refresh();
+    if (j.error) throw new Error(j.error);
+    const n = (j.sent || []).length;
+    if (j.failed && j.failed.length) status(`Sent ${n}, then stopped: ${j.failed[0].code}: ${j.failed[0].error}. The rest stay queued. Confirm the ${n} that printed in the yellow box.`, 'bad');
+    else status(`Sent ${n} label(s) to the label printer. Please confirm in the yellow box that they came out.`);
+    if (n) $('after').scrollIntoView({ block:'nearest', behavior:'smooth' });
+    changed();
+  } catch (e) { status('Error: ' + e.message, 'bad'); drawQueue(); }
+}
+$('lprint').onclick = () => labeller(null);
+$('qlist').addEventListener('click', async e => {
+  if (e.target.dataset.lp) return labeller([e.target.dataset.lp]);
+  const c = e.target.dataset.rm; if (!c) return;
+  try { await apiOk('labels/' + c, 'DELETE'); await refresh(); changed(); } catch (err) { status('Error: ' + err.message, 'bad'); }
+});
+let paper = 'letter'; try { paper = localStorage.getItem('cdtag-paper') || 'letter'; } catch {}
+$('paper').value = paper;
+$('paper').onchange = () => { paper = $('paper').value; try { localStorage.setItem('cdtag-paper', paper); } catch {} };
+$('print').onclick = async () => {
+  const w = window.open('', '_blank');
+  try {
+    const r = await apiOk('labels/sheet', 'POST', { paper });
+    PRINTING = r.codes; if (w) w.location = API + r.url; else location.href = API + r.url;
+    await refresh(); changed(); status('Sheet saved as ' + r.file + '. Print it from the PDF window.');
+  } catch (e) { if (w) w.close(); status('Error: ' + e.message, 'bad'); }
+};
+$('done').onclick = async () => { try { await apiOk('labels/printed', 'POST', { codes: PRINTING }); PRINTING = []; await refresh(); changed(); status('Marked as printed.'); } catch (e) { status('Error: ' + e.message, 'bad'); } };
+$('notyet').onclick = async () => { try { await apiOk('labels/dismiss', 'POST', {}); PRINTING = []; await refresh(); } catch (e) { status('Error: ' + e.message, 'bad'); } };
+
+
+refresh().catch(e => status('Label queue: ' + e.message, 'bad'));
+return { status, refresh, setLabels, lab: () => LAB, onQueueChange: f => HOOKS.push(f) };
+})();
+</script>
+<script>
+(() => {   // ===== CD tab =====
+const LMS = '/lms/jsonrpc.js', API = '/cdcheck-api/';
+const MUSIC_ROOT = '/media/space2/music';
+const $ = id => document.getElementById(id);
+const status = TAG.status;
+const esc = MediaUI.esc;
+
+async function rpc(cmd) {
+  const r = await fetch(LMS, { method:'POST', body: JSON.stringify({ id:1, method:'slim.request', params:['', cmd] }) });
+  if (!r.ok) throw new Error('Lyrion HTTP ' + r.status);
+  return (await r.json()).result;
+}
+async function api(path, method = 'GET', body) {
+  const r = await fetch(API + path, { method, cache:'no-store', headers: body ? { 'Content-Type':'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+function norm(s) {
+  return String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// ---------- Code 128 (subset B), drawn as SVG; no libraries ----------
+const C128 = ('212222 222122 222221 121223 121322 131222 122213 122312 132212 221213 221312 231212 112232 122132 122231 113222 123122 123221 223211 221132 ' +
+  '221231 213212 223112 312131 311222 321122 321221 312212 322112 322211 212123 212321 232121 111323 131123 131321 112313 132113 132311 211313 231113 231311 ' +
+  '112133 112331 132131 113123 113321 133121 313121 211331 231131 213113 213311 213131 311123 311321 331121 312113 312311 332111 314111 221411 431111 111224 ' +
+  '111422 121124 121421 141122 141221 112214 112412 122114 122411 142112 142211 241211 221114 413111 241112 134111 111242 121142 121241 114212 124112 124211 ' +
+  '411212 421112 421211 212141 214121 412121 111143 111341 131141 114113 114311 411113 411311 113141 114131 311141 411131 211412 211214 211232 2331112').split(' ');
+function code128svg(text) {
+  const vals = [104];                                         // Start B
+  for (const ch of text) { const v = ch.charCodeAt(0) - 32; if (v < 0 || v > 95) throw new Error('bad character'); vals.push(v); }
+  vals.push(vals.reduce((a, v, i) => a + v * (i || 1), 0) % 103, 106);   // checksum, Stop
+  let x = 10, bars = '';                                      // 10 modules of quiet zone each side
+  vals.forEach(v => { [...C128[v]].forEach((w, i) => { w = +w; if (i % 2 === 0) bars += `<rect x="${x}" y="0" width="${w}" height="50"/>`; x += w; }); });
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${x + 10} 50" preserveAspectRatio="none" shape-rendering="crispEdges" fill="#000">${bars}</svg>`;
+}
+
+// ---------- library + what already has a barcode ----------
+let LIB = null, PAIRS = new Map(), RPAIRS = new Map();
+async function library() {
+  if (LIB) return LIB;
+  status('Loading library list…');
+  LIB = (await rpc(['albums', 0, 5000, 'tags:ajlsy'])).albums_loop || [];
+  return LIB;
+}
+async function folderOf(id) {
+  const r = await rpc(['titles', 0, 1, 'album_id:' + id, 'tags:u']);
+  const u = r.titles_loop?.[0]?.url; if (!u) return '';
+  try { const p = decodeURIComponent(u.replace(/^file:\/\//, '')).replace(/^\/music/, MUSIC_ROOT); return p.substring(0, p.lastIndexOf('/')); } catch { return ''; }
+}
+async function refresh() {
+  const [b, l] = await Promise.all([api('barcodes'), api('labels')]);
+  PAIRS = new Map();                                         // album_id -> [codes]
+  RPAIRS = new Map();                                        // ARM folder ("Artist/Album", ripped, not yet in the library) -> [codes]
+  for (const [code, r] of Object.entries(b)) {
+    if (r.album_id != null) { (PAIRS.get(r.album_id) || PAIRS.set(r.album_id, []).get(r.album_id)).push(code); }
+    if (r.arm_folder) { (RPAIRS.get(r.arm_folder) || RPAIRS.set(r.arm_folder, []).get(r.arm_folder)).push(code); }
+  }
+  TAG.setLabels(l);
+}
+
+// ---------- search ----------
+async function search(q) {
+  $('out').innerHTML = '';
+  const toks = norm(q).split(' ').filter(Boolean);           // no search words: just list what was ripped recently
+  try {
+    await refresh();
+    const only = $('onlyNo').checked;
+    const card = (title, sub, codes, idAttr, tag) => {        // one album: its barcode state and the label button
+      const mine = codes.find(c => c.startsWith('LV')), queued = mine && TAG.lab().queue.some(x => x.code === mine);
+      const state = mine ? (queued ? ['maybe', mine + ' queued'] : ['have', mine + ' printed'])
+                  : codes.length ? ['have', 'has barcode ' + codes[0]] : ['miss', 'no barcode'];
+      const btn = mine ? (queued ? '' : `<button class="sm sec" data-act="re" ${idAttr}>Print again</button>`)
+                       : `<button class="sm" data-act="new" ${idAttr}>${codes.length ? 'Label anyway' : 'Make label'}</button>`;
+      return `<div class="card"><div class="item"><div><div class="t">${esc(title)}</div><div class="m">${esc(sub)}</div>
+        <span class="badge ${state[0]}">${esc(state[1])}</span>${tag || ''}</div><div>${btn}</div></div></div>`;
+    };
+    let html = '', nLib = 0, hidLib = 0;
+    if (toks.length) {
+      const all = (await library()).filter(a => { const h = norm(a.album + ' ' + a.artist); return toks.every(t => h.includes(t)); });
+      const hits = all.filter(a => !only || !PAIRS.has(a.id)).slice(0, 15);
+      nLib = hits.length; hidLib = all.length - all.filter(a => !only || !PAIRS.has(a.id)).length;
+      html += '<h2>In the library</h2>' + (hits.map(a => card(a.album, a.artist + (a.year ? ' · ' + a.year : ''), PAIRS.get(a.id) || [], `data-id="${a.id}"`)).join('')
+            || '<div class="card">Nothing found' + (hidLib ? ` (${hidLib} hidden because they already have a barcode)` : '') + '.</div>');
+    }
+    let rips = []; try { rips = await api('ripped'); } catch (e) { html += `<div class="card m">Could not list ripped albums: ${esc(e.message)}</div>`; }
+    const rall = rips.filter(r => { const h = norm(r.album + ' ' + r.artist); return toks.every(t => h.includes(t)); }).sort((a, b) => b.mtime - a.mtime);
+    const rhits = rall.filter(r => !only || !RPAIRS.has(r.rel)), hidRip = rall.length - rhits.length;
+    html += '<h2>Ripped, not yet in the library</h2>' + (rhits.map(r => card(r.album, r.artist + ' · ' + r.tracks + ' tracks', RPAIRS.get(r.rel) || [], `data-rel="${esc(r.rel)}"`,
+              ' <span class="badge" style="background:#7b3fc4">ripped</span>')).join('')
+            || '<div class="card">Nothing ripped' + (toks.length ? ' matches' : ' is waiting') + (hidRip ? ` (${hidRip} hidden because they already have a barcode)` : '') + '.</div>');
+    $('out').innerHTML = html;
+    status((toks.length ? nLib + ' library album(s), ' : '') + rhits.length + ' ripped album(s)' + (hidLib + hidRip ? `, ${hidLib + hidRip} hidden (already have a barcode)` : ''));
+  } catch (e) { status('Error: ' + e.message); }
+}
+$('f').onsubmit = e => { e.preventDefault(); search($('q').value); };
+$('out').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const requeue = b.dataset.act === 're';
+  b.disabled = true;
+  try {
+    let body, name;
+    if (b.dataset.rel) {                                      // ripped by ARM: the service keys it by its folder; scanning the tag later offers the import
+      body = { arm_folder: b.dataset.rel, requeue }; name = b.dataset.rel.split('/').pop();
+    } else {
+      const a = (LIB || []).find(x => x.id == b.dataset.id); if (!a) { b.disabled = false; return; }
+      body = { album_id: a.id, album: a.album, artist: a.artist, folder: await folderOf(a.id), requeue }; name = a.album;
+    }
+    const r = await api('labels', 'POST', body);
+    status(`${r.code} queued for ${name}.`);
+    await search($('q').value);
+  } catch (err) { b.disabled = false; status('Error: ' + err.message); }
+});
+$('onlyNo').onchange = () => search($('q').value);
+
+TAG.onQueueChange(() => search($('q').value));   // a label printed / removed in the shared queue changes the album badges
+
+search('');                                   // no search yet: show what ARM has ripped and not yet imported
+})();
+</script>
+<script>
+(() => {   // ===== DVD tab =====
+const API = '/cdcheck-api/';
+const $ = id => document.getElementById(id);
+const esc = MediaUI.esc;
+const status = TAG.status;
+const canon = MediaUI.canon;
+const fmtSize = MediaUI.fmtSize;
+const fmtLen = s => { if (s == null) return ''; s = Math.round(s); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? h + 'h' + String(m).padStart(2, '0') : m + ' min'; };
+async function api(path, method = 'GET', body) {
+  const r = await fetch(API + path, { method, cache:'no-store', headers: body ? { 'Content-Type':'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, j };
+}
+async function apiOk(path, method, body) { const r = await api(path, method, body); if (!r.ok) throw new Error(r.j.error || 'HTTP ' + r.status); return r.j; }
+
+// ---------- TMDB search widget: fills `host`, calls onPick(result) ----------
+function searchWidget(host, { q = '', year = '', onPick }) {
+  host.innerHTML = `<div class="row"><input type="search" placeholder="search TMDB (title)" value="${esc(q)}"><input type="number" class="yr" placeholder="year" value="${esc(year)}"><button class="sec sm">Search</button></div><div class="sres"></div>`;
+  const [qi, yi] = host.querySelectorAll('input'), out = host.querySelector('.sres');
+  const go = async () => {
+    if (!qi.value.trim()) return;
+    out.innerHTML = '<div class="m">Searching…</div>';
+    try {
+      const j = await apiOk('video/search?q=' + encodeURIComponent(qi.value.trim()) + (yi.value ? '&year=' + encodeURIComponent(yi.value) : ''));
+      const rs = j.results || [];
+      out.innerHTML = rs.length ? rs.slice(0, 8).map((r, i) => `<div class="res" data-i="${i}">${r.poster_url ? `<img loading="lazy" src="${esc(r.poster_url)}" alt="">` : '<img alt="">'}
+        <div><div class="t">${esc(r.title)} ${r.year ? '(' + esc(r.year) + ')' : ''}</div>${r.original_title && r.original_title !== r.title ? `<div class="m">${esc(r.original_title)} [${esc(r.original_language)}]</div>` : ''}
+        <div class="m">${esc((r.overview || '').slice(0, 110))}</div></div></div>`).join('') : '<div class="m">No results. Enter the title by hand below.</div>';
+      out._rs = rs;
+    } catch (e) { out.innerHTML = `<div class="bad">${esc(e.message)}</div>`; }
+  };
+  host.querySelector('button').onclick = go;
+  qi.onkeydown = yi.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); go(); } };
+  out.onclick = e => {
+    const el = e.target.closest('.res'); if (!el) return;
+    out.querySelectorAll('.res').forEach(x => x.classList.toggle('sel', x === el));
+    onPick(out._rs[+el.dataset.i]);
+  };
+  if (q) go();
+}
+
+// ---------- camera scan into an input (shared scanner, media-ui.js; stops after one read) ----------
+let scanTo = null;                        // { input, btn } the running scan fills
+const cam = MediaUI.scanner({ video: $('cam'), status, once: true, scrollIntoView: true, prompt: 'Point the camera at the case barcode…',
+  onState: on => { if (scanTo && scanTo.btn) scanTo.btn.textContent = on ? 'Stop' : 'Scan'; },
+  onCode: (raw, c) => { if (!scanTo) return; const i = scanTo.input; i.value = c; i.dispatchEvent(new Event('input')); status('Scanned ' + c + '.', 'good'); } });
+function scanInto(input, btn) {
+  if (cam.running) { cam.stop(); return; }
+  if (scanTo && scanTo.btn && scanTo.btn !== btn) scanTo.btn.textContent = 'Scan';
+  scanTo = { input, btn }; cam.forget(); cam.start();
+}
+TAG.dvdCam = cam;
+
+// ---------- code chooser: scan/type a UPC, or make an LV label ----------
+function codeWidget(host, name) {
+  host.innerHTML = `<label class="chk"><input type="radio" name="${name}" value="lv" checked> Make an LV label (queued for printing; goes on the case)</label>
+    <label class="chk"><input type="radio" name="${name}" value="upc"> Use the case barcode</label>
+    <div class="row cwrow" style="display:none"><input type="text" autocapitalize="characters" autocomplete="off" placeholder="scan or type the barcode"><button class="sec sm" type="button">Scan</button></div>`;
+  const row = host.querySelector('.cwrow'), inp = row.querySelector('input'), btn = row.querySelector('button');
+  host.querySelectorAll('input[type=radio]').forEach(r => r.onchange = () => { row.style.display = host.querySelector('input[type=radio]:checked').value === 'upc' ? '' : 'none'; if (row.style.display === '') inp.focus(); });
+  btn.onclick = () => scanInto(inp, btn);
+  return () => host.querySelector('input[type=radio]:checked').value === 'upc' ? { barcode: canon(inp.value) } : { mint_label: true };
+}
+
+// ---------- 1. ripped list ----------
+let RIPS = [], SEL = null, F = {};      // F: per-file state, keyed by name
+async function loadRipped() {
+  $('ripped').innerHTML = '<div class="m">Loading…</div>';
+  const r = await api('video/ripped');
+  if (!r.ok) { $('ripped').innerHTML = `<div class="card bad">${esc(r.j.error || 'HTTP ' + r.status)}</div>`; return; }
+  RIPS = (Array.isArray(r.j) ? r.j : []).sort((a, b) => b.mtime - a.mtime);
+  $('rcount').textContent = RIPS.length ? RIPS.length + ' folder(s)' : '';
+  $('ripped').innerHTML = RIPS.length ? RIPS.map((x, i) => {
+    const ok = x.ready && !(x.busy && x.busy.length);
+    return `<div class="card rip item ${ok ? '' : 'grey'} ${SEL && SEL.rel === x.rel ? 'sel' : ''}" data-i="${i}"><div><div class="t">${esc(x.rel)}</div>
+      <div class="m">${(x.files || []).length} file(s) · ${fmtSize(x.size)} · ${new Date(x.mtime * 1000).toLocaleString()}${x.arm && x.arm.label ? ' · disc ' + esc(x.arm.label) : ''}</div>
+      ${ok ? '' : `<div class="hint">not ready: ${esc((x.busy || []).join(', ') || 'still ripping')}</div>`}${x.warning ? `<div class="hint">${esc(x.warning)}</div>` : ''}</div>
+      <div><button class="sm" ${ok ? '' : 'disabled'}>Choose</button></div></div>`;
+  }).join('') : '<div class="card">Nothing ripped yet — put a DVD in the ARM drive</div>';
+}
+$('reload').onclick = loadRipped;
+$('ripped').onclick = e => { const el = e.target.closest('.rip'); if (!el || el.classList.contains('grey')) return; pick(RIPS[+el.dataset.i]); };
+
+// ---------- 2. folder selected ----------
+let MAIN = {}, MAINCODE = null;
+function pick(rip) {
+  SEL = rip; F = {}; MAIN = { title:'', year:'', tmdb_id:'', imdb_id:'', dest:'', version:'', jellyfin_title:'' };
+  $('work').style.display = ''; $('plan').innerHTML = ''; $('prog').innerHTML = ''; $('vers').innerHTML = ''; $('import').disabled = true;
+  document.querySelectorAll('.rip').forEach(x => x.classList.toggle('sel', RIPS[+x.dataset.i] === rip));
+  const arm = rip.arm || {};
+  $('armline').textContent = arm.label ? 'ARM disc label: ' + arm.label + (arm.crc_id ? ' · crc ' + arm.crc_id : '') : 'No ARM info for this folder.';
+  const roles = [['main', 'main film'], ['film', 'another film'], ['extra', 'extra'], ['skip', 'skip']];
+  for (const f of rip.files || []) F[f.name] = { role: f.role === 'main' ? 'main' : 'extra', meta: { title:'', year:'', tmdb_id:'', dest:'', version:'' }, long: !!f.long };
+  $('files').innerHTML = '<tr><th>File</th><th>Length</th><th>Size</th><th>Role</th></tr>' + (rip.files || []).map(f =>
+    `<tr><td>${esc(f.name)}${f.long && f.role !== 'main' ? '<div class="hint">possibly a second film</div>' : ''}</td><td>${fmtLen(f.length)}${f.chapters ? '<div class="m">' + f.chapters + ' ch</div>' : ''}</td><td>${fmtSize(f.size)}</td>
+     <td><select data-f="${esc(f.name)}">${roles.map(([v, l]) => `<option value="${v}" ${v === F[f.name].role ? 'selected' : ''}>${l}</option>`).join('')}</select></td></tr>`).join('');
+  $('files').onchange = e => { const n = e.target.dataset.f; if (n) { F[n].role = e.target.value; drawOthers(); $('import').disabled = true; } };
+  const guess = /^(new|unknown|dvd|disc|dvd_video|video_ts)?[_\s\d]*$/i.test(arm.label || '') ? '' : String(arm.label).replace(/[_]+/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  drawMain(guess);
+  drawOthers();
+  MAINCODE = codeWidget($('codeimp'), 'impcode');
+  $('work').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function field(label, key, obj, attrs = '') { return `<label class="lbl">${label}<input type="text" data-k="${key}" value="${esc(obj[key])}" ${attrs}></label>`; }
+function bindFields(host, obj) { host.querySelectorAll('input[data-k]').forEach(i => i.oninput = () => { obj[i.dataset.k] = i.value; $('import').disabled = true; }); }
+function fillFields(host, obj) { host.querySelectorAll('input[data-k]').forEach(i => i.value = obj[i.dataset.k] ?? ''); }
+function drawMain(guess) {
+  $('mainid').innerHTML = `<div class="m">Main film</div><div class="sw"></div>
+    <div class="row"><label class="lbl" style="flex:1">Title${''}<input type="text" data-k="title"></label><label class="lbl">Year<input type="text" class="yr" data-k="year"></label></div>
+    <label class="lbl">Folder / file in the film library (editable)<input type="text" data-k="dest"></label>
+    <div class="row"><label class="lbl" style="flex:1">Version (optional, e.g. Director's Cut)<input type="text" data-k="version"></label><label class="lbl">TMDB id<input type="text" class="yr" data-k="tmdb_id"></label></div>
+    <div class="m" id="mjt"></div>`;
+  fillFields($('mainid'), MAIN); bindFields($('mainid'), MAIN);
+  searchWidget($('mainid').querySelector('.sw'), { q: guess, year: '', onPick: r => {
+    Object.assign(MAIN, { title: r.proposed_title || r.title, year: r.year || '', tmdb_id: r.tmdb_id || '', dest: r.proposed_path || '', jellyfin_title: r.jellyfin_title || '', imdb_id: '' });
+    fillFields($('mainid'), MAIN); $('mjt').textContent = r.jellyfin_title ? 'Jellyfin will show: ' + r.jellyfin_title : ''; $('import').disabled = true;
+    apiOk('video/search?tmdb_id=' + encodeURIComponent(r.tmdb_id)).then(d => { const x = d.results ? d.results[0] : d; if (x && x.imdb_id) MAIN.imdb_id = x.imdb_id; else if (d.imdb_id) MAIN.imdb_id = d.imdb_id; }).catch(() => {});
+  } });
+}
+function drawOthers() {
+  const names = Object.keys(F).filter(n => F[n].role === 'film');
+  $('others').innerHTML = names.map((n, i) => `<div class="card" data-n="${esc(n)}"><div class="m">Another film: <b>${esc(n)}</b></div><div class="sw"></div>
+    <div class="row"><label class="lbl" style="flex:1">Title<input type="text" data-k="title"></label><label class="lbl">Year<input type="text" class="yr" data-k="year"></label></div>
+    <label class="lbl">Folder / file in the film library<input type="text" data-k="dest"></label>
+    <div class="row"><label class="lbl" style="flex:1">Version (optional)<input type="text" data-k="version"></label><label class="lbl">TMDB id<input type="text" class="yr" data-k="tmdb_id"></label></div></div>`).join('');
+  $('others').querySelectorAll('[data-n]').forEach(c => {
+    const m = F[c.dataset.n].meta; fillFields(c, m); bindFields(c, m);
+    searchWidget(c.querySelector('.sw'), { q: '', year: '', onPick: r => { Object.assign(m, { title: r.proposed_title || r.title, year: r.year || '', tmdb_id: r.tmdb_id || '', dest: r.proposed_path || '' }); fillFields(c, m); $('import').disabled = true; } });
+  });
+}
+
+// ---------- request / preview / import ----------
+function buildBody(dry) {
+  if (!MAIN.title.trim()) throw new Error('Give the main film a title (search, or type it).');
+  const files = Object.entries(F).map(([name, s]) => {
+    const e = { name, role: s.role };
+    if (s.role === 'film') {
+      if (!s.meta.title.trim()) throw new Error('Give "' + name + '" a title, or change its role.');
+      e.title = s.meta.title.trim(); if (s.meta.year) e.year = +s.meta.year; if (s.meta.version) e.version = s.meta.version.trim(); if (s.meta.dest) e.dest = s.meta.dest.trim(); if (s.meta.tmdb_id) e.tmdb_id = +s.meta.tmdb_id;
+    }
+    return e;
+  });
+  if (!files.some(f => f.role === 'main')) throw new Error('One file must be the main film.');
+  const code = MAINCODE();
+  if (code.barcode === '') throw new Error('Scan or type the case barcode, or choose an LV label.');
+  const b = { rel: SEL.rel, kind: 'dvd', title: MAIN.title.trim(), files, ...code };
+  if (MAIN.year) b.year = +MAIN.year; if (MAIN.version) b.version = MAIN.version.trim(); if (MAIN.tmdb_id) b.tmdb_id = +MAIN.tmdb_id;
+  if (MAIN.imdb_id) b.imdb_id = MAIN.imdb_id; if (MAIN.dest) b.dest = MAIN.dest.trim(); if (MAIN.jellyfin_title) b.jellyfin_title = MAIN.jellyfin_title;
+  if (SEL.arm && SEL.arm.crc_id) b.crc_id = SEL.arm.crc_id;
+  if (dry) b.dry_run = true;
+  return b;
+}
+let ALLOW = false;
+function explain(r, dry) {      // 409 handling; returns true when it showed a follow-up
+  const j = r.j || {};
+  if (r.status === 409 && j.need === 'version') {
+    $('vers').innerHTML = `<div class="card" style="border:2px solid var(--warn)"><b>This film already exists in the library.</b> Give this copy a version label (for example "Director's Cut", "Extended", "DVD").
+      ${(j.existing || []).length ? '<div class="m">Existing: ' + j.existing.map(x => esc(typeof x === 'string' ? x : (x.version || x.path || JSON.stringify(x)))).join('; ') + '</div>' : ''}
+      <div class="row"><input type="text" id="vin" placeholder="version label" value="${esc(MAIN.version)}"><button id="vok">Use it</button></div></div>`;
+    $('vok').onclick = () => { MAIN.version = $('vin').value.trim(); fillFields($('mainid'), MAIN); $('vers').innerHTML = ''; run(dry); };
+    $('vin').focus(); return true;
+  }
+  if (r.status === 409 && j.code && /tmdb|catalogu|duplicate/i.test(j.error || '')) {
+    $('vers').innerHTML = `<div class="card" style="border:2px solid var(--warn)"><b>Already catalogued.</b> ${esc(j.error)} (code <b>${esc(j.code)}</b>). If this really is a second copy, you can import anyway.
+      <div class="row"><button class="warn" id="dup">Import anyway</button><a target="_blank" href="check.html?tab=dvd&amp;code=${encodeURIComponent(j.code)}" class="m">check ${esc(j.code)}</a></div></div>`;
+    $('dup').onclick = () => { ALLOW = true; $('vers').innerHTML = ''; run(dry); }; return true;
+  }
+  return false;
+}
+async function run(dry) {
+  $('vers').innerHTML = ''; $('plan').innerHTML = ''; 
+  let body; try { body = buildBody(dry); } catch (e) { status(e.message, 'bad'); return; }
+  if (ALLOW) body.allow_duplicate = true;
+  status(dry ? 'Building the plan…' : 'Starting the import…');
+  const r = await api('video/import', 'POST', body);
+  if (!r.ok) {
+    if (explain(r, dry)) { status('Needs your attention below.', 'bad'); return; }
+    const sp = r.status === 507 ? ' (not enough disk space)' : '';
+    status((r.j.error || 'HTTP ' + r.status) + sp, 'bad'); return;
+  }
+  if (dry) { drawPlan(r.j); $('import').disabled = false; status('Plan ready. Check it, then Import.', 'good'); }
+  else poll(r.j.job, r.j.bytes_total);
+}
+$('preview').onclick = () => run(true);
+$('import').onclick = () => run(false);
+function drawPlan(p) {
+  $('plan').innerHTML = `<div class="card"><b>Plan</b> <span class="m">${fmtSize(p.bytes_total)} to copy</span>
+    <table>${(p.copies || []).map(c => `<tr><td>${esc(c.name)}<div class="m">→ ${esc(c.dest_rel)}</div></td><td>${esc(c.role)}</td><td>${fmtSize(c.size)}</td></tr>`).join('')}</table>
+    ${(p.skipped || []).length ? `<div class="m">Skipped: ${esc(JSON.stringify(p.skipped))}</div>` : ''}
+    <h3>List lines</h3><pre>${esc((p.tsv_lines || []).join('\n'))}</pre>
+    <h3>Record</h3><pre>${esc(JSON.stringify(p.record || {}, null, 1))}</pre>
+    ${(p.warnings || []).map(w => `<div class="hint">⚠ ${esc(w)}</div>`).join('')}
+    ${(p.remove_from_arm || []).length ? `<div class="m">Will remove from ARM afterwards: ${esc((p.remove_from_arm || []).join(', '))}</div>` : ''}</div>`;
+}
+let polling = null;
+async function poll(job, total) {
+  $('import').disabled = true; $('preview').disabled = true; $('plan').innerHTML = '';
+  clearTimeout(polling);
+  const tick = async () => {
+    let j;
+    try { j = await apiOk('video/import/' + job); } catch (e) { $('prog').innerHTML = `<div class="card bad">Lost contact: ${esc(e.message)} (retrying)</div>`; polling = setTimeout(tick, 2000); return; }
+    const pr = j.progress || {}, pct = pr.bytes_total ? Math.min(100, pr.bytes_done / pr.bytes_total * 100) : 0;
+    if (j.state === 'running') {
+      $('prog').innerHTML = `<div class="card"><b>Importing…</b> ${esc(j.step || '')}<div class="meter"><div style="width:${pct}%"></div></div><div class="m">${fmtSize(pr.bytes_done)} of ${fmtSize(pr.bytes_total)} · ${esc(pr.file || '')}</div></div>`;
+      polling = setTimeout(tick, 1000); return;
+    }
+    $('preview').disabled = false; ALLOW = false;
+    if (j.state === 'error') { $('prog').innerHTML = `<div class="card"><b class="bad">Import failed</b><div>${esc(j.error)}</div>${(j.warnings || []).map(w => `<div class="hint">⚠ ${esc(w)}</div>`).join('')}<div class="m">Nothing is removed from ARM on failure.</div></div>`; status('Import failed.', 'bad'); return; }
+    const r = j.result || {};
+    $('prog').innerHTML = `<div class="card" style="border:2px solid var(--ok)"><b class="good">Imported</b> as <b>${esc(r.code)}</b>
+      <div class="m">${esc((r.record && r.record.title) || '')}</div>
+      <div class="m">Jellyfin ids: ${esc(JSON.stringify(r.jellyfin_ids || {}))}</div>
+      ${r.label_queued ? '<div>An LV label was queued. Print it below and stick it on the case.</div>' : ''}
+      ${(r.removed_from_arm || []).length ? `<div class="m">Removed from ARM: ${esc(r.removed_from_arm.join(', '))}</div>` : ''}
+      ${(r.kept_in_arm || []).length ? `<div class="m">Kept in ARM: ${esc(r.kept_in_arm.join(', '))}</div>` : ''}
+      ${(j.warnings || []).map(w => `<div class="hint">⚠ ${esc(w)}</div>`).join('')}
+      <div class="row"><a target="_blank" href="check.html?tab=dvd&amp;code=${encodeURIComponent(r.code)}"><button class="sec" type="button">Check ${esc(r.code)} in Check (DVD)</button></a></div></div>`;
+    status('Imported ' + r.code + '.', 'good');
+    $('import').disabled = true; $('work').scrollIntoView({ behavior: 'smooth' });
+    await refresh(); loadRipped();
+  };
+  tick();
+}
+
+// ---------- catalogue only ----------
+let CCODE = codeWidget($('ccode'), 'catcode'), CTMDB = null;
+searchWidget($('csearch'), { q: '', year: '', onPick: r => {
+  $('ctitle').value = r.original_title && /^[\x00-ɏ]*$/.test(r.original_title) ? r.original_title : r.title; $('cyear').value = r.year || ''; CTMDB = r.tmdb_id;
+  if ($('ckind').value !== 'dvd' && $('ckind').value !== 'bluray' && $('ckind').value !== 'vhs') $('ckind').value = 'dvd';
+} });
+$('cadd').onclick = async () => {
+  const title = $('ctitle').value.trim(); if (!title) { status('Give it a title.', 'bad'); return; }
+  const code = CCODE(); if (code.barcode === '') { status('Scan or type the barcode, or choose an LV label.', 'bad'); return; }
+  const b = { title, kind: $('ckind').value, ...(code.mint_label ? { mint_label: true } : { code: code.barcode }) };   // POST /items takes code, not barcode
+  if ($('ccreator').value.trim()) b.creator = $('ccreator').value.trim();
+  if ($('cyear').value) b.year = +$('cyear').value;
+  if ($('ccatno').value.trim()) b.catno = $('ccatno').value.trim();
+  if ($('cnotes').value.trim()) b.notes = $('cnotes').value.trim();
+  if (CTMDB) { b.ids = { tmdb_id: String(CTMDB) }; b.source = 'tmdb'; } else b.source = 'manual';
+  $('cadd').disabled = true;
+  try {
+    const r = await api('items', 'POST', b);
+    if (r.status === 409) { $('cout').innerHTML = `<div class="hint">That code is already in use${r.j.code ? ' (' + esc(r.j.code) + ')' : ''}: ${esc(r.j.error || '')}</div>`; return; }
+    if (!r.ok) throw new Error(r.j.error || 'HTTP ' + r.status);
+    const c = r.j.code || (r.j.record && r.j.record.code) || code.barcode;
+    $('cout').innerHTML = `<div class="good">Catalogued as <b>${esc(c)}</b>${r.j.queued ? ' — label queued, print it below.' : '.'}</div>`;
+    status('Catalogued ' + c + '.', 'good'); CTMDB = null;
+    ['ctitle', 'ccreator', 'cyear', 'ccatno', 'cnotes'].forEach(i => $(i).value = '');
+    CCODE = codeWidget($('ccode'), 'catcode'); await refresh();
+  } catch (e) { status('Error: ' + e.message, 'bad'); }
+  finally { $('cadd').disabled = false; }
+};
+
+const refresh = () => TAG.refresh();
+
+loadRipped();
+})();
+</script>
+<script>
+// Tabs (?tab=cd|dvd, #cd / #dvd, remembered). Leaving the DVD tab stops its camera. Inside the hub, the
+// links to Check switch the hub's view instead of loading a second copy of the page.
+TAG.tabs = MediaUI.tabs({ page: 'tag', tabs: ['cd', 'dvd'], onShow: (t, prev, quiet) => {
+  if (t !== 'dvd' && TAG.dvdCam) TAG.dvdCam.stop();
+  if (!quiet) TAG.status('');
+} });
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[data-hub]');
+  if (!a || !document.documentElement.classList.contains('embed') || parent === window) return;
+  e.preventDefault();
+  try { parent.location.hash = a.dataset.hub; } catch { location.href = a.href; }
+});
+</script>
+</body>
+</html>

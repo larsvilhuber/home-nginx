@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Check</title>
+<link rel="stylesheet" href="vendor/fontawesome-6.7.2/css/all.min.css">
+<style>
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --ok:#1b7f3b; --no:#b3261e; --warn:#9a6700; --acc:#2457d6; --rip:#7b3fc4; --unk:#7a7a85; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121214; --fg:#ececf1; --mut:#9a9aa6; --card:#1e1e22; --ok:#4cc26b; --no:#ff6b61; --warn:#e3b341; --acc:#7ea2ff; --rip:#a67be8; --unk:#8a8a96; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  h2 { font-size:1.05rem; margin:22px 0 6px; }
+  .sub { color:var(--mut); font-size:.85rem; margin-bottom:12px; }
+  /* CD | DVD tabs */
+  .ptabs { display:flex; gap:6px; margin:0 0 12px; border-bottom:1px solid #8884; }
+  .ptabs button { flex:1; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 12px; font:inherit; font-weight:600;
+                  background:none; color:var(--mut); border:0; border-bottom:3px solid transparent; border-radius:8px 8px 0 0; cursor:pointer; }
+  .ptabs button[aria-selected=true] { color:var(--acc); border-bottom-color:var(--acc); background:var(--card); }
+  [hidden] { display:none !important; }
+  video { width:100%; max-height:40vh; background:#000; border-radius:10px; display:none; object-fit:cover; }
+  .row { display:flex; gap:8px; margin:10px 0; align-items:center; flex-wrap:wrap; }
+  .row > form, form.row { flex-wrap:nowrap; }
+  input[type=text], input[type=search] { flex:1; min-width:0; padding:10px; font-size:1rem; border:1px solid var(--mut); border-radius:8px; background:var(--bg); color:var(--fg); }
+  button { padding:10px 14px; font-size:1rem; border:0; border-radius:8px; background:var(--acc); color:#fff; }
+  button.sec { background:var(--card); color:var(--fg); }
+  button.sm { padding:6px 10px; font-size:.85rem; }
+  button:disabled { opacity:.45; }
+  .card { background:var(--card); border-radius:10px; padding:12px; margin:10px 0; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:99px; font-weight:600; font-size:.85rem; color:#fff; }
+  .have { background:var(--ok); } .rip { background:var(--rip); } .miss { background:var(--no); } .maybe { background:var(--warn); } .unk { background:var(--unk); }
+  .t { font-weight:600; } .m { color:var(--mut); font-size:.85rem; word-break:break-all; }
+  .status { color:var(--mut); font-size:.9rem; min-height:1.3em; }
+  .status.bad { color:var(--no); } .status.ok { color:var(--ok); }
+  ul { list-style:none; padding:0; margin:0; }
+  li { padding:6px 0; border-top:1px solid #8884; }
+  li:first-child { border-top:0; }
+  /* CD tab: album choice */
+  .opts { display:flex; flex-direction:column; gap:8px; margin:10px 0; }
+  button.opt { display:block; width:100%; text-align:left; background:var(--bg); color:var(--fg); border:2px solid #8886; padding:10px 12px; }
+  button.opt[aria-checked=true] { border-color:var(--acc); background:color-mix(in srgb, var(--acc) 14%, var(--bg)); }
+  button.opt[aria-checked=true] .t::before { content:'\2713  '; color:var(--acc); }
+  button.opt.none { text-align:center; color:var(--mut); }
+  button.opt.ripc { border-color:var(--rip); }
+  button.opt.ripc[aria-checked=true] { background:color-mix(in srgb, var(--rip) 16%, var(--bg)); }
+  .btnrow { display:flex; gap:8px; margin-top:6px; }
+  .btnrow button { flex:1; }
+  /* DVD tab: checklist */
+  .chk { display:flex; gap:8px; padding:6px 0; border-top:1px solid #8884; align-items:flex-start; }
+  .chk:first-of-type { border-top:0; }
+  .chk .dot { flex:none; width:1.3em; text-align:center; font-weight:700; }
+  .chk.ok .dot { color:var(--ok); } .chk.no .dot { color:var(--no); } .chk.unk .dot { color:var(--unk); }
+  pre { white-space:pre-wrap; word-break:break-word; font-size:.8rem; background:var(--bg); padding:8px; border-radius:8px; max-height:200px; overflow:auto; }
+  .item { padding:8px 0; border-top:1px solid #8884; display:flex; gap:10px; align-items:center; cursor:pointer; }
+  .item:first-child { border-top:0; } .item > div { flex:1; min-width:0; }
+  html.embed h1, html.embed .sub { display:none; }
+</style>
+<script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
+</head>
+<body>
+<main>
+  <h1>Check</h1>
+  <div class="sub">Scan a barcode or LV label: is the CD in the Lyrion library, is the film in place for Jellyfin?</div>
+  <div class="ptabs" role="tablist" aria-label="Medium">
+    <button type="button" role="tab" data-tab="cd" aria-controls="pane-cd"><i class="fa-solid fa-compact-disc" aria-hidden="true"></i> CD</button>
+    <button type="button" role="tab" data-tab="dvd" aria-controls="pane-dvd"><i class="fa-solid fa-film" aria-hidden="true"></i> DVD</button>
+  </div>
+
+  <!-- ===== CD (was cdcheck.html) ===== -->
+  <section id="pane-cd" data-pane="cd" role="tabpanel" hidden>
+    <div class="sub">Scan a CD barcode and see whether it is already in the Lyrion library.</div>
+    <video id="cam" playsinline muted></video>
+    <div class="row">
+      <button id="scan"><i class="fa-solid fa-camera" aria-hidden="true"></i> Scan barcode</button>
+      <button id="stop" class="sec" style="display:none">Stop</button>
+    </div>
+    <form class="row" id="manual">
+      <input type="text" id="code" autocapitalize="characters" autocomplete="off" placeholder="or type barcode / catalog no.">
+      <button>Look up</button>
+    </form>
+    <form class="row" id="textsearch">
+      <input type="search" id="q" placeholder="or search artist / album">
+      <button class="sec">Search</button>
+    </form>
+    <div id="cdnote" class="m"></div>
+    <div id="status" class="status"></div>
+    <div id="out"></div>
+
+    <h2>This session</h2>
+    <ul id="hist"></ul>
+    <div class="row"><button class="sec" id="clear">Clear history</button><button class="sec" id="copy">Copy missing list</button></div>
+  </section>
+
+  <!-- ===== DVD (was dvdcheck.html) ===== -->
+  <section id="pane-dvd" data-pane="dvd" role="tabpanel" hidden>
+    <div class="sub">Scan a film's barcode (or LV label) to check that its file, Jellyfin list entry, links and Jellyfin item are all in place.</div>
+    <video id="dcam" playsinline muted></video>
+    <div class="row">
+      <button id="dscan"><i class="fa-solid fa-camera" aria-hidden="true"></i> Scan barcode</button>
+      <button id="dstop" class="sec" style="display:none">Stop</button>
+    </div>
+    <form class="row" id="dmanual">
+      <input type="text" id="dcode" autocapitalize="characters" autocomplete="off" placeholder="or type barcode / LV code">
+      <button>Check</button>
+    </form>
+    <div id="dvdnote" class="m"></div>
+    <div id="dstatus" class="status"></div>
+    <div id="dout"></div>
+
+    <h2>Film records</h2>
+    <div class="card" id="list"><span class="m">Loading…</span></div>
+  </section>
+</main>
+
+<script src="media-ui.js"></script>
+<script>
+// Page controller: shared by the two tabs. CHECK.cd / CHECK.dvd are filled in by the tab scripts below.
+const CHECK = {
+  // Show `code` on the other tab (a scanned film on the CD tab, a CD on the DVD tab). Returns true when it switched.
+  toTab(tab, code, note) {
+    if (!CHECK.tabs || CHECK.tabs.current === tab || !CHECK[tab]) return false;
+    CHECK.tabs.show(tab);
+    CHECK[tab].cam.prime(code);               // the disc still in front of the camera is not read a second time
+    CHECK[tab].check(code);
+    const n = document.getElementById(tab + 'note'); if (n) n.textContent = note || '';
+    return true;
+  },
+};
+</script>
+<script>
+(() => {   // ===== CD tab =====
+// Lyrion JSON-RPC is reached through a same-origin nginx proxy (no CORS headers upstream).
+const LMS = '/lms/jsonrpc.js';
+const MB  = '/mb/release/';          // same-origin caching proxy (see nginx/README.md); it adds the User-Agent and paces requests
+async function mbFetch(url) {        // retry transient failures (503 = MusicBrainz throttling) with backoff
+  let err;
+  for (let i = 0; i < 4; i++) {
+    try {
+      const r = await fetch(url);
+      if (r.ok || (r.status !== 503 && r.status !== 502 && r.status !== 504)) return r;
+      err = new Error('MusicBrainz HTTP ' + r.status);
+    } catch (e) { err = e; }
+    await new Promise(ok => setTimeout(ok, 1500 * (i + 1)));
+  }
+  throw err;
+}
+const MUSIC_ROOT = '/media/space2/music';   // host path of the library (mounted as /music in the container)
+
+const $ = id => document.getElementById(id);
+const status = t => { $('status').textContent = t; $('status').className = 'status'; };
+const esc = MediaUI.esc;
+
+async function rpc(cmd) {
+  const r = await fetch(LMS, { method:'POST', body: JSON.stringify({ id:1, method:'slim.request', params:['', cmd] }) });
+  if (!r.ok) throw new Error('Lyrion HTTP ' + r.status);
+  return (await r.json()).result;
+}
+
+// ---------- normalisation / matching ----------
+function norm(s) {
+  return String(s || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[\(\[][^\)\]]*(remaster|deluxe|edition|disc|cd|bonus|expanded|anniversary)[^\)\]]*[\)\]]/g, ' ')
+    .replace(/\b(disc|cd)\s*\d+\b/g, ' ')
+    .replace(/&/g, ' and ').replace(/^the\s+/, '')
+    .replace(/[^a-z0-9]+/g, ' ').trim();
+}
+const tokens = s => new Set(norm(s).split(' ').filter(Boolean));
+function shared(a, b) {
+  const A = tokens(a), B = tokens(b); let n = 0;
+  for (const t of A) if (B.has(t)) n++;
+  return { n, a: A.size, b: B.size };
+}
+function overlapMin(a, b) {         // lenient (artists): share of the smaller token set found in the larger
+  const s = shared(a, b); return s.a && s.b ? s.n / Math.min(s.a, s.b) : 0;
+}
+function overlap(a, b) {            // strict (titles): a one-word title like "5" must not match a long one
+  const s = shared(a, b); if (!s.a || !s.b) return 0;
+  const small = Math.min(s.a, s.b), dice = s.n / Math.sqrt(s.a * s.b);
+  return small >= 3 ? Math.max(dice, 0.9 * s.n / small) : dice;
+}
+const mainTitle = s => String(s || '').split(/\s*[:(\[]/)[0];   // "Pulp Fiction: Music From the Motion Picture" -> "Pulp Fiction"
+function score(want, have) {        // 0..1
+  let t = norm(want.title) === norm(have.album) ? 1 : overlap(want.title, have.album) * 0.9;
+  const a = !want.artist || /^various/i.test(have.artist) ? 0.7 : overlapMin(want.artist, have.artist);
+  // same title with a different subtitle/suffix counts as the same album, but only if the artist agrees too
+  const mw = norm(mainTitle(want.title));
+  if (mw && a >= 0.5 && mw === norm(mainTitle(have.album))) t = Math.max(t, 0.95);
+  return t * 0.7 + a * 0.3;
+}
+
+let LIB = null;
+async function library() {
+  if (LIB) return LIB;
+  status('Loading library list…');
+  const r = await rpc(['albums', 0, 5000, 'tags:ajlsy']);
+  LIB = r.albums_loop || [];
+  return LIB;
+}
+async function folderOf(albumId) {
+  const r = await rpc(['titles', 0, 1, 'album_id:' + albumId, 'tags:u']);
+  const u = r.titles_loop?.[0]?.url; if (!u) return '';
+  try {
+    const p = decodeURIComponent(u.replace(/^file:\/\//, '')).replace(/^\/music/, MUSIC_ROOT);
+    return p.substring(0, p.lastIndexOf('/'));
+  } catch { return ''; }
+}
+async function findInLibrary(want) {
+  const lib = await library();
+  const hits = lib.map(a => ({ a, s: score(want, a) })).filter(x => x.s >= 0.6)
+                  .sort((x, y) => y.s - x.s).slice(0, 5);
+  for (const h of hits) h.folder = await folderOf(h.a.id);
+  return hits;
+}
+
+// ---------- MusicBrainz ----------
+function barcodeVariants(c) {
+  const v = new Set([c]);
+  if (c.length === 12) v.add('0' + c);
+  if (c.length === 13 && c[0] === '0') v.add(c.slice(1));
+  return [...v];
+}
+const cleanCode = s => String(s || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+const isUPC = c => /^\d{8,14}$/.test(c);          // retail UPC/EAN; anything else is a club / catalog code
+async function mbLookup(code) {
+  const q = isUPC(code) ? 'barcode:(' + barcodeVariants(code).join(' OR ') + ')' : 'catno:"' + code + '"';
+  const r = await mbFetch(MB + '?fmt=json&limit=10&query=' + encodeURIComponent(q));
+  if (!r.ok) throw new Error('MusicBrainz HTTP ' + r.status);
+  const j = await r.json();
+  return (j.releases || []).map(x => ({
+    title: x.title,
+    artist: (x['artist-credit'] || []).map(c => c.name + (c.joinphrase || '')).join(''),
+    date: x.date || '', country: x.country || '', id: x.id,
+    rgid: x['release-group']?.id
+  }));
+}
+
+// ---------- rendering ----------
+function render(heading, wants, results) {
+  let html = '';
+  wants.forEach((w, i) => {
+    const hits = results[i];
+    const best = hits[0];
+    const kind = best && best.s >= 0.85 ? 'have' : best ? 'maybe' : 'miss';
+    const label = { have:'In library', maybe:'Possible match', miss:'Not found' }[kind];
+    html += `<div class="card"><span class="badge ${kind}">${label}</span>
+      <div class="t">${esc(w.title)}</div><div class="m">${esc(w.artist)} ${esc(w.date)} ${esc(w.country)}</div>`;
+    if (hits.length) html += '<ul>' + hits.map(h =>
+      `<li><div class="t">${esc(h.a.album)} <span class="m">(${Math.round(h.s * 100)}%)</span></div>
+       <div class="m">${esc(h.a.artist)}${h.a.year ? ' · ' + h.a.year : ''}</div>
+       <div class="m">${esc(h.folder)}</div></li>`).join('') + '</ul>';
+    html += '</div>';
+  });
+  $('out').innerHTML = html || '<div class="card">Nothing to show.</div>';
+}
+
+// ---------- saved pairings (barcode -> album), kept by the small service behind /cdcheck-api/ ----------
+const API = '/cdcheck-api/barcodes';
+async function apiGet(code) {
+  const r = await fetch(API + '/' + code);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error('save service HTTP ' + r.status);
+  return r.json();
+}
+async function apiSave(rec) {
+  const r = await fetch(API, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(rec) });
+  if (!r.ok) throw new Error('save failed (HTTP ' + r.status + ')');
+  return r.json();
+}
+async function apiForget(code) {
+  const r = await fetch(API + '/' + code, { method:'DELETE' });
+  if (!r.ok && r.status !== 404) throw new Error('forget failed (HTTP ' + r.status + ')');
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function rippedList() {      // albums ARM has ripped that are still waiting in its output folder
+  try { const r = await fetch('/cdcheck-api/ripped', { cache:'no-store' }); return r.ok ? await r.json() : []; } catch { return []; }
+}
+function ripMatches(wants, rips) {
+  return rips.map(r => ({ ...r, s: Math.max(...wants.map(w => score(w, { album:r.album, artist:r.artist }))) }))
+             .filter(r => r.s >= 0.8).sort((x, y) => y.s - x.s);
+}
+// After an import Lyrion needs a rescan; once it has listed the album, upgrade the saved record to a normal album pairing.
+async function resolveImported(code, rec, wait) {
+  if (wait) {
+    await sleep(2000);
+    for (let i = 0; i < 90; i++) { const s = await rpc(['serverstatus', 0, 0]); if (!s.rescan) break; await sleep(2000); }
+  } else if ((await rpc(['serverstatus', 0, 0])).rescan) return null;
+  LIB = null;
+  const hits = (await library()).map(a => ({ a, s: score({ title:rec.album, artist:rec.artist }, a) }))
+                                .filter(x => x.s >= 0.85).sort((x, y) => y.s - x.s);
+  if (!hits.length) return null;
+  const h = hits[0]; h.folder = await folderOf(h.a.id);
+  return apiSave({ barcode:code, status:'match', mb_release_id:rec.mb_release_id || '', mb_title:rec.mb_title || '', mb_artist:rec.mb_artist || '',
+                   album_id:h.a.id, album:h.a.album, artist:h.a.artist, folder:h.folder || rec.folder || '' });
+}
+async function runImport(code, src) {
+  try {
+    status('Moving into the library…');
+    const r = await fetch('/cdcheck-api/import', { method:'POST', headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({ barcode:code, arm_folder:src.arm_folder, mb_release_id:src.mb_release_id || '', mb_title:src.mb_title || '', mb_artist:src.mb_artist || '' }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    PICK = null; PENDING_CODE = null;
+    const last = HIST.slice().reverse().find(x => x.code === code);
+    if (last) { last.kind = 'have'; saveHist(); }
+    renderConfirmed(code, j);
+    if (!j.rescan) { status('Imported, but the Lyrion rescan did not start: ' + (j.rescan_error || '')); return; }
+    status('Imported. Waiting for Lyrion to rescan…');
+    const m = await resolveImported(code, j, true);
+    if (m) { renderConfirmed(code, m); status('Imported and in the library.'); }
+    else status('Imported; Lyrion has not listed it yet. Look the barcode up again later.');
+  } catch (e) { status('Error: ' + e.message); }
+}
+
+let PICK = null;                    // the pairing currently being chosen: { code, w, cands, sel }
+let PENDING_CODE = null;            // last scanned barcode: a text search can still pair it with the right album
+let PENDING_W = null;               // MusicBrainz's idea of that barcode (kept in the saved pairing), or null
+
+function renderPick(code, w, hits, rips = []) {
+  const map = new Map();            // one bar per library album, best score wins
+  hits.forEach(h => { const o = map.get(h.a.id); if (!o || h.s > o.s) map.set(h.a.id, h); });
+  const libc = [...map.values()].sort((x, y) => y.s - x.s).slice(0, 5);
+  const ripc = rips.map(r => ({ a:{ album:r.album, artist:r.artist, id:null, year:'' }, s:r.s, rip:r,
+                                folder:'Ripped, not yet in the library: ' + r.rel + ' (' + r.tracks + ' tracks)' }));
+  const cands = [...ripc, ...libc];
+  PICK = { code, w, cands, sel: null };
+  const head = w.id ? `<div class="t">${esc(w.title)}</div><div class="m">${esc(w.artist)} ${esc(w.date)} ${esc(w.country)}</div>`
+                    : `<div class="t">Barcode ${esc(code)}</div><div class="m">search: ${esc(w.title)}</div>`;
+  const bars = cands.map((h, i) =>
+    `<button type="button" class="opt${h.rip ? ' ripc' : ''}" role="radio" aria-checked="false" data-i="${i}">
+       <div class="t">${h.rip ? '<span class="badge rip">ripped</span> ' : ''}${esc(h.a.album)} <span class="m">(${Math.round(h.s * 100)}%)</span></div>
+       <div class="m">${esc(h.a.artist)}${h.a.year ? ' · ' + h.a.year : ''}</div>
+       <div class="m">${esc(h.folder)}</div></button>`).join('');
+  $('out').innerHTML = `<div class="card">${head}
+    <div class="m" style="margin-top:8px">${cands.length ? 'Tap the one that is this CD, then Save. Not here? Search by artist / album above.' : 'Nothing similar in the library. Search by artist / album above to find it and link this barcode.'}</div>
+    <div class="opts" role="radiogroup">${bars}
+      <button type="button" class="opt none" role="radio" aria-checked="false" data-i="none">None of these — not in my library</button></div>
+    <div class="btnrow"><button type="button" id="save" disabled>Save</button>${ripc.length ? '<button type="button" id="imp" disabled>Save + import</button>' : ''}</div></div>`;
+}
+function renderConfirmed(code, rec) {
+  const none = rec.status === 'none', rip = rec.status === 'ripped', imp = rec.status === 'imported';
+  const [bc, bt] = none ? ['miss', 'Marked not in library'] : rip ? ['rip', 'Ripped, waiting to import']
+                 : imp ? ['have', rec.album_id ? 'Imported' : 'Imported, Lyrion is rescanning'] : ['have', 'Confirmed'];
+  $('out').innerHTML = `<div class="card"><span class="badge ${bc}">${bt}</span>
+    ${none ? '' : `<div class="t">${esc(rec.album)}</div><div class="m">${esc(rec.artist)}</div><div class="m">${esc(rip ? rec.arm_folder : rec.folder)}</div>`}
+    <div class="m" style="margin-top:6px">${esc(rec.mb_title)} ${rec.mb_artist ? '— ' + esc(rec.mb_artist) : ''} · saved ${esc((rec.saved || '').slice(0, 10))}</div>
+    <div class="btnrow">${rip ? '<button type="button" id="doimp">Import to library</button>' : ''}<button type="button" class="sec" id="change">Change</button><button type="button" class="sec" id="forget">Forget</button></div></div>`;
+  if (rip) $('doimp').onclick = () => runImport(code, rec);
+  $('change').onclick = () => checkBarcode(code, true);
+  $('forget').onclick = async () => {
+    try { await apiForget(code); status('Forgotten.'); checkBarcode(code, true); } catch (e) { status('Error: ' + e.message); }
+  };
+}
+$('out').addEventListener('click', async e => {
+  const bar = e.target.closest('button.opt');
+  if (bar && PICK) {
+    PICK.sel = bar.dataset.i;
+    document.querySelectorAll('#out button.opt').forEach(b => b.setAttribute('aria-checked', b === bar ? 'true' : 'false'));
+    $('save').disabled = false;
+    if ($('imp')) $('imp').disabled = !(PICK.sel !== 'none' && PICK.cands[+PICK.sel].rip);
+    return;
+  }
+  if (e.target.id === 'imp' && PICK && PICK.sel !== null && PICK.sel !== 'none') {
+    const { code, w, cands, sel } = PICK, h = cands[+sel];
+    $('imp').disabled = true; $('save').disabled = true;
+    return runImport(code, { arm_folder: h.rip.rel, mb_release_id: w.id || '', mb_title: w.title || '', mb_artist: w.artist || '' });
+  }
+  if (e.target.id === 'save' && PICK && PICK.sel !== null) {
+    const { code, w, cands, sel } = PICK, h = sel === 'none' ? null : cands[+sel];
+    const rec = { barcode: code, status: !h ? 'none' : h.rip ? 'ripped' : 'match', mb_release_id: w.id || '', mb_title: w.title || '', mb_artist: w.artist || '' };
+    if (h && h.rip) Object.assign(rec, { album: h.a.album, artist: h.a.artist, arm_folder: h.rip.rel });
+    else if (h) Object.assign(rec, { album_id: h.a.id, album: h.a.album, artist: h.a.artist, folder: h.folder || '' });
+    try {
+      $('save').disabled = true; status('Saving…');
+      const saved = await apiSave(rec);
+      PENDING_CODE = null; PICK = null;
+      const last = HIST.slice().reverse().find(x => x.code === code);
+      if (last) { last.kind = !h ? 'miss' : h.rip ? 'rip' : 'have'; saveHist(); }
+      renderConfirmed(saved.barcode, saved); status('Saved.');
+    } catch (err) { $('save').disabled = false; status('Error: ' + err.message); }
+  }
+});
+
+// ---------- history ----------
+let HIST = [];
+try { HIST = JSON.parse(sessionStorage.getItem('cdcheck') || '[]'); } catch {}
+function saveHist() { try { sessionStorage.setItem('cdcheck', JSON.stringify(HIST)); } catch {} drawHist(); }
+function drawHist() {
+  $('hist').innerHTML = HIST.slice().reverse().map(h =>
+    `<li><span class="badge ${h.kind}">${h.kind === 'have' ? 'have' : h.kind === 'rip' ? 'ripped' : h.kind === 'maybe' ? '?' : 'missing'}</span>
+     ${esc(h.title)} <span class="m">— ${esc(h.artist)} ${esc(h.code || '')}</span></li>`).join('');
+}
+function addHist(w, hits, code, isRip) {
+  const best = hits[0], kind = isRip ? 'rip' : best && best.s >= 0.85 ? 'have' : best ? 'maybe' : 'miss';
+  HIST.push({ title: w.title, artist: w.artist, kind, code }); saveHist();
+}
+$('clear').onclick = () => { HIST = []; saveHist(); };
+$('copy').onclick = async () => {
+  const t = HIST.filter(h => h.kind !== 'have' && h.kind !== 'rip').map(h => `${h.artist} - ${h.title} (${h.code || ''})`).join('\n');
+  try { await navigator.clipboard.writeText(t); status('Copied.'); } catch { status(t || 'Nothing missing.'); }
+};
+
+// ---------- actions ----------
+async function checkBarcode(code, force = false) {
+  code = cleanCode(code); if (!code) return;
+  $('out').innerHTML = ''; $('cdnote').textContent = ''; PICK = null; PENDING_CODE = null;
+  try {
+    if (!force) {                  // a pairing you confirmed earlier wins over any guessing
+      let stored = null;
+      try { stored = await apiGet(code); } catch (e) { status('Note: ' + e.message); }
+      if (stored && MediaUI.FILM_KINDS.includes(stored.kind) && CHECK.toTab('dvd', code, (stored.album || code) + ' is a ' + stored.kind + ': showing it on the DVD tab.')) return;
+      if (stored && stored.status === 'ripped' && !(await rippedList()).some(r => r.rel === stored.arm_folder)) stored = null;   // moved or deleted since
+      if (stored && stored.status === 'imported' && !stored.album_id) stored = await resolveImported(code, stored, false).catch(() => null) || stored;
+      if (stored) {
+        renderConfirmed(code, stored);
+        HIST.push({ title: stored.album || stored.mb_title || code, artist: stored.artist || '', kind: stored.status === 'none' ? 'miss' : stored.status === 'ripped' ? 'rip' : 'have', code }); saveHist();
+        status('Barcode ' + code + ' (saved pairing)'); return;
+      }
+    }
+    status('Looking up ' + code + ' on MusicBrainz' + (isUPC(code) ? '' : ' (catalog number)') + '…');
+    const wants = await mbLookup(code);
+    PENDING_CODE = code; PENDING_W = wants[0] || null;     // stay armed: if the title does not match, a search below can still link them
+    if (!wants.length) { PENDING_CODE = code; status('Barcode ' + code + ' not in MusicBrainz. Search artist / album below to pair it.'); return; }
+    // different pressings of the same album are duplicates: keep one per title+artist
+    const seen = new Set(), uniq = wants.filter(w => { const k = norm(w.title) + '|' + norm(w.artist); if (seen.has(k)) return false; seen.add(k); return true; });
+    status('Checking library…');
+    const results = [];
+    for (const w of uniq) results.push(await findInLibrary(w));
+    const ripHits = ripMatches(uniq, await rippedList());
+    renderPick(code, uniq[0], results.flat(), ripHits);
+    addHist(uniq[0], results[0], code, ripHits.length > 0);
+    status('Barcode ' + code);
+  } catch (e) { status('Error: ' + e.message); }
+}
+async function checkText(q) {
+  $('out').innerHTML = '';
+  try {
+    const lib = await library();
+    const n = norm(q), toks = n.split(' ').filter(Boolean);
+    const hits = lib.filter(a => { const h = norm(a.album + ' ' + a.artist); return toks.every(t => h.includes(t)); })
+                    .slice(0, 10).map(a => ({ a, s: 1 }));
+    for (const h of hits) h.folder = await folderOf(h.a.id);
+    const rips = (await rippedList()).filter(r => { const h = norm(r.album + ' ' + r.artist); return toks.every(t => h.includes(t)); }).map(r => ({ ...r, s: 1 }));
+    if (PENDING_CODE) renderPick(PENDING_CODE, PENDING_W || { title: q, artist: '', id: '' }, hits, rips);   // pair the scanned barcode with one of these
+    else {
+      render(q, [{ title: q, artist: '', date: '', country: '' }], [hits]);
+      $('out').insertAdjacentHTML('beforeend', rips.map(r => `<div class="card"><span class="badge rip">Ripped, not imported</span>
+        <div class="t">${esc(r.album)}</div><div class="m">${esc(r.artist)} · ${r.tracks} tracks</div></div>`).join(''));
+    }
+    status((hits.length + rips.length) + ' match(es)' + (PENDING_CODE ? ' for barcode ' + PENDING_CODE : ''));
+  } catch (e) { status('Error: ' + e.message); }
+}
+
+$('manual').onsubmit = e => { e.preventDefault(); checkBarcode($('code').value); };
+$('textsearch').onsubmit = e => { e.preventDefault(); if ($('q').value.trim()) checkText($('q').value); };
+
+// ---------- camera scanning (shared scanner, media-ui.js) ----------
+const cam = MediaUI.scanner({ video: $('cam'), status,
+  onState: on => { $('scan').style.display = on ? 'none' : ''; $('stop').style.display = on ? '' : 'none'; },
+  onCode: async raw => { $('code').value = raw; await checkBarcode(raw); } });
+$('scan').onclick = () => cam.start(); $('stop').onclick = () => { cam.stop(); status(''); };
+CHECK.cd = { check: code => { $('code').value = code; return checkBarcode(code); }, cam };
+drawHist();
+})();
+</script>
+<script>
+(() => {   // ===== DVD tab =====
+const API = '/cdcheck-api/';
+const $ = id => document.getElementById(id);
+const esc = MediaUI.esc;
+const status = (t, cls) => { $('dstatus').textContent = t; $('dstatus').className = 'status ' + (cls || ''); };
+const canon = MediaUI.canon;
+const fmtSize = MediaUI.fmtSize;
+let CUR = '', busy = false;
+
+async function api(path, method = 'GET', body) {
+  const r = await fetch(API + path, { method, cache:'no-store', headers: body ? { 'Content-Type':'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, j };
+}
+
+// One checklist row: ok true = green, false = red, null/undefined = grey (unknown).
+function line(label, c) {
+  if (!c) return '';
+  const cls = c.ok === true ? 'ok' : c.ok === false ? 'no' : 'unk';
+  const dot = c.ok === true ? '✓' : c.ok === false ? '✗' : '?';
+  let det = c.detail || '';
+  if (label === 'File') det = [c.path, c.size != null ? fmtSize(c.size) : '', det].filter(Boolean).join(' · ');
+  else if (label === 'List row') det = [(c.rows || []).map(r => 'line ' + r.line + (r.version ? ' [' + r.version + ']' : '')).join(', '), det].filter(Boolean).join(' · ');
+  else if (label === 'Symlink') det = [(c.links || []).map(l => l.link.split('/').slice(-2).join('/')).join(', '), det].filter(Boolean).join(' · ');
+  else if (label === 'Jellyfin') det = c.ok === null ? 'Jellyfin unreachable. ' + det : [c.id ? 'id ' + c.id : '', c.resolved ? 'resolved ' + c.resolved : '', det].filter(Boolean).join(' · ');
+  return `<div class="chk ${cls}"><span class="dot">${dot}</span><div><b>${label}</b><div class="m">${esc(det)}</div></div></div>`;
+}
+function meta(rec) {
+  if (!rec) return '';
+  const bits = [rec.kind, rec.status, rec.year, rec.creator, rec.catno && 'cat ' + rec.catno, rec.notes].filter(Boolean);
+  return `<div class="m">${esc(bits.join(' · '))}</div>`;
+}
+
+async function check(raw) {
+  const code = canon(raw); if (!code) return;
+  CUR = code; busy = true; $('dvdnote').textContent = '';
+  try {
+    status('Checking ' + code + '…');
+    const { ok, status: st, j } = await api('video/check/' + encodeURIComponent(code));
+    if (st === 404) { $('dout').innerHTML = ''; status(code + ': ' + (j.error || 'unknown barcode') + '. Nothing is catalogued under this code.', 'bad'); return; }
+    if (!ok) throw new Error(j.error || 'HTTP ' + st);
+    const rec = j.record || {};
+    if (j.kind === 'cd' && j.record && CHECK.toTab('cd', code, (rec.title || code) + ' is a CD: showing it on the CD tab.')) return;
+    let html = `<div class="card"><div class="t">${esc(rec.title || code)}</div>${meta(rec)}<div class="m">${esc(code)}</div>`;
+    if (!j.films || !j.films.length) {
+      html += `<div style="margin-top:8px">${esc(j.message || 'no film files recorded for this code')}</div></div>`;
+      status(code + ': ' + (j.message || 'no films'), j.kind === 'cd' ? '' : 'bad');
+    } else {
+      const sum = j.all_ok === true ? '<span class="badge have">all OK</span>' : j.all_ok === false ? '<span class="badge miss">problems found</span>' : '<span class="badge unk">unknown</span>';
+      html += `<div style="margin-top:6px">${sum} <span class="m">${j.playable ? 'playable' : 'not playable'}${j.saved ? ' · saved ' + esc(j.saved) : ''}</span></div></div>`;
+      for (const f of j.films) {
+        html += `<div class="card"><div class="t">${esc(f.title || 'Film ' + (f.index + 1))} ${f.ok === true ? '<span class="badge have">OK</span>' : f.ok === false ? '<span class="badge miss">fix</span>' : '<span class="badge unk">?</span>'}</div>
+          <div class="m">${esc(f.movie_path || '')}</div>
+          ${line('File', f.file_exists)}${line('List row', f.tsv_row)}${line('Symlink', f.symlink_ok)}${line('Jellyfin', f.jellyfin_id_ok)}</div>`;
+      }
+      status(code + ': ' + (j.all_ok === true ? 'all checks passed.' : j.all_ok === false ? 'some checks failed. Try "Rebuild + rescan".' : 'some checks could not be made.'), j.all_ok === true ? 'ok' : j.all_ok === false ? 'bad' : '');
+    }
+    html += `<div class="row"><button id="rebuild" class="sec">Rebuild + rescan</button><button id="recheck" class="sec">Re-check</button></div><div id="rbout"></div>`;
+    $('dout').innerHTML = html;
+    $('rebuild').onclick = rebuild; $('recheck').onclick = () => check(CUR);
+  } catch (e) { status('Error: ' + e.message, 'bad'); cam.forget(); }
+  finally { busy = false; }
+}
+async function rebuild() {
+  const b = $('rebuild'); b.disabled = true; $('rbout').innerHTML = '<div class="m">Rebuilding the Jellyfin list and rescanning (can take a while)…</div>';
+  try {
+    const { ok, status: st, j } = await api('video/rebuild', 'POST', {});
+    const bld = j.build || {};
+    if (!ok || !bld.ok || (j.refresh && !j.refresh.ok)) {
+      $('rbout').innerHTML = `<div class="card"><b style="color:var(--no)">Rebuild ${!ok || !bld.ok ? 'failed' : 'ran, but the Jellyfin rescan failed'}</b> (HTTP ${st})
+        <pre>${esc([j.error, bld.stdout, bld.stderr, j.refresh && j.refresh.error].filter(Boolean).join('\n'))}</pre></div>`;
+      b.disabled = false; return;
+    }
+    status('Rebuilt. Waiting a moment for Jellyfin to pick up the change…');
+    await new Promise(r => setTimeout(r, 3000));
+    await check(CUR);
+  } catch (e) { $('rbout').innerHTML = `<div class="m" style="color:var(--no)">Error: ${esc(e.message)}</div>`; b.disabled = false; }
+}
+$('dmanual').onsubmit = e => { e.preventDefault(); check($('dcode').value); $('dcode').value = ''; };
+
+// ---------- film records ----------
+async function loadList() {
+  try {
+    const kinds = ['dvd', 'bluray', 'vhs'];
+    const rs = await Promise.all(kinds.map(k => api('items?kind=' + k).catch(() => ({ ok:false, j:[] }))));
+    const items = rs.flatMap(r => Array.isArray(r.j) ? r.j : []).sort((a, b) => String(a.title).localeCompare(String(b.title)));
+    $('list').innerHTML = items.length ? items.map(i => `<div class="item" data-code="${esc(i.code)}"><div><div class="t">${esc(i.title)}</div>
+      <div class="m">${esc(i.code)} · ${esc(i.kind)}${i.play && i.play.system ? ' · plays on ' + esc(i.play.system) : ' · catalogue only'}</div></div><button class="sm sec">Check</button></div>`).join('')
+      : '<span class="m">No film records yet.</span>';
+  } catch (e) { $('list').innerHTML = '<span class="m">Could not load: ' + esc(e.message) + '</span>'; }
+}
+$('list').addEventListener('click', e => { const i = e.target.closest('[data-code]'); if (i) { check(i.dataset.code); scrollTo({ top: 0, behavior: 'smooth' }); } });
+
+// ---------- camera (shared scanner, media-ui.js) ----------
+const cam = MediaUI.scanner({ video: $('dcam'), status, repeatMs: 6000,
+  onState: on => { $('dscan').style.display = on ? 'none' : ''; $('dstop').style.display = on ? '' : 'none'; },
+  onCode: (raw, c) => check(c) });
+$('dscan').onclick = () => cam.start(); $('dstop').onclick = () => { cam.stop(); status(''); };
+CHECK.dvd = { check: code => check(code), cam };
+
+loadList();
+loadList();
+})();
+</script>
+<script>
+// Tabs (?tab=cd|dvd, #cd / #dvd, remembered), ?code= runs a check on the chosen tab; a legacy #<code> (dvdcheck.html#LV00101) too.
+(() => {
+  const q = new URLSearchParams(location.search), h = location.hash.slice(1);
+  const legacy = h && !/^(cd|dvd)$/i.test(h) && /^[A-Za-z0-9]+$/.test(h) ? h : '';
+  CHECK.tabs = MediaUI.tabs({ page: 'check', tabs: ['cd', 'dvd'], onShow: (t, prev) => {
+    // one camera at a time: the hidden tab's camera stops, and the scanning carries over to the shown tab
+    const was = prev && CHECK[prev] && CHECK[prev].cam.running;
+    if (prev && CHECK[prev]) CHECK[prev].cam.stop();
+    if (was && CHECK[t]) CHECK[t].cam.start();
+  } });
+  if (legacy && !q.get('tab')) CHECK.tabs.show('dvd');
+  const code = q.get('code') || legacy;
+  if (code && /^[A-Za-z0-9 -]+$/.test(code)) CHECK[CHECK.tabs.current].check(code);
+  if (code) try {                          // done with it: a reload or a tab switch must not run it again
+    const u = new URL(location.href); u.searchParams.delete('code'); if (legacy) u.hash = '';
+    history.replaceState(null, '', u.pathname + u.search + u.hash);
+  } catch {}
+})();
+</script>
+</body>
+</html>

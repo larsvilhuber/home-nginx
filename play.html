@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Play</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --ok:#1b7f3b; --no:#b3261e; --warn:#9a6700; --acc:#2457d6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121214; --fg:#ececf1; --mut:#9a9aa6; --card:#1e1e22; --ok:#4cc26b; --no:#ff6b61; --warn:#e3b341; --acc:#7ea2ff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  .sub { color:var(--mut); font-size:.85rem; margin-bottom:12px; }
+  .row { display:flex; gap:8px; margin:10px 0; align-items:center; }
+  select { flex:1; min-width:0; padding:10px; font-size:1rem; border-radius:8px; border:1px solid var(--mut); background:var(--bg); color:var(--fg); }
+  button { padding:10px 14px; font-size:1rem; border:0; border-radius:8px; background:var(--acc); color:#fff; }
+  button.sec { background:var(--card); color:var(--fg); }
+  button:disabled { opacity:.45; }
+  #cam { width:100%; max-height:50vh; background:#000; border-radius:10px; display:none; object-fit:cover; }
+  .card { background:var(--card); border-radius:10px; padding:12px; margin:10px 0; }
+  .now { display:flex; gap:12px; align-items:center; }
+  .now > div { min-width:0; flex:1; }
+  .t { font-weight:600; } .m { color:var(--mut); font-size:.85rem; word-break:break-all; }
+  #status { color:var(--mut); font-size:.95rem; min-height:1.4em; margin:6px 0; }
+  #status.ok { color:var(--ok); font-weight:600; } #status.bad { color:var(--no); font-weight:600; }
+  .transport button { flex:1; }
+  ul { list-style:none; padding:0; margin:0; } li { padding:6px 0; border-top:1px solid #8884; font-size:.9rem; }
+  li:first-child { border-top:0; }
+  html.embed h1, html.embed .sub { display:none; }
+</style>
+<script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
+</head>
+<body>
+<main>
+  <h1>Play</h1>
+  <div class="sub">Pick a player once, then scan a CD's barcode to play it (films play on a Jellyfin device). Pair new barcodes in <a href="check.html?tab=cd" target="_top" data-hub="check/cd">Check</a>.</div>
+
+  <div class="row">
+    <select id="player"><option value="">Loading players…</option></select>
+    <button class="sec" id="reload" title="reload player list">↻</button>
+  </div>
+
+  <div class="row">
+    <select id="filmdev"><option value="">Loading film devices…</option></select>
+    <button class="sec" id="filmreload" title="reload Jellyfin devices">↻</button>
+  </div>
+  <div class="sub" id="filmhint" style="display:none">Open Jellyfin on the TV and sign in, then refresh.</div>
+
+  <video id="cam" playsinline muted></video>
+  <div class="row">
+    <button id="scan" disabled>Start scanning</button>
+    <button id="stop" class="sec" style="display:none">Stop</button>
+  </div>
+  <div id="status"></div>
+  <div id="shelfline" class="m"></div>
+
+  <div id="nowcard" class="card" style="display:none">
+    <div class="now"><div><div class="t" id="nt"></div><div class="m" id="na"></div><div class="m" id="nc"></div></div></div>
+    <div class="row transport">
+      <button class="sec" id="prev">⏮</button>
+      <button class="sec" id="pp">⏯</button>
+      <button class="sec" id="next">⏭</button>
+      <button class="sec" id="halt">⏹</button>
+    </div>
+  </div>
+
+  <div id="choosecard" class="card" style="display:none">
+    <div class="t" id="choosetitle">Which film?</div>
+    <div class="row" style="flex-wrap:wrap" id="choosebtns"></div>
+  </div>
+
+  <div id="filmcard" class="card" style="display:none">
+    <div class="t" id="ft"></div><div class="m" id="fc"></div>
+    <div class="row transport">
+      <button class="sec" id="fpp">⏯ Pause / resume</button>
+      <button class="sec" id="fstop">⏹ Stop</button>
+    </div>
+  </div>
+
+  <form class="row" id="manual">
+    <input type="text" id="code" autocapitalize="characters" autocomplete="off" placeholder="or type a barcode" style="flex:1;min-width:0;padding:10px;font-size:1rem;border:1px solid var(--mut);border-radius:8px;background:var(--bg);color:var(--fg)">
+    <button class="sec">Play</button>
+  </form>
+
+  <ul id="hist"></ul>
+</main>
+
+<script>
+const LMS = '/lms/jsonrpc.js', API = '/cdcheck-api/';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function status(t, cls = '') { const s = $('status'); s.textContent = t; s.className = cls; }
+
+async function rpc(player, cmd) {
+  const r = await fetch(LMS, { method:'POST', body: JSON.stringify({ id:1, method:'slim.request', params:[player, cmd] }) });
+  if (!r.ok) throw new Error('Lyrion HTTP ' + r.status);
+  return (await r.json()).result;
+}
+const canon = c => { c = String(c || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(); return c.length === 13 && /^0\d+$/.test(c) ? c.slice(1) : c; };
+
+// ---------- sticky player ----------
+let PLAYER = '';
+try { PLAYER = localStorage.getItem('cdplay.player') || ''; } catch {}
+async function loadPlayers() {
+  const sel = $('player');
+  try {
+    const ps = (await rpc('', ['players', 0, 100])).players_loop || [];
+    ps.sort((a, b) => a.name.localeCompare(b.name));
+    sel.innerHTML = '<option value="">— choose a player —</option>' +
+      ps.map(p => `<option value="${esc(p.playerid)}">${esc(p.name)}${p.connected ? '' : ' (offline)'}</option>`).join('');
+    if (PLAYER && ps.some(p => p.playerid === PLAYER)) sel.value = PLAYER;
+    else { sel.value = ''; if (PLAYER) status('Your saved player is no longer listed. Choose another.', 'bad'); PLAYER = ''; }
+  } catch (e) { sel.innerHTML = '<option value="">Lyrion unreachable</option>'; status('Error: ' + e.message, 'bad'); }
+  $('scan').disabled = !PLAYER && !FILMDEV;
+}
+$('player').onchange = e => {
+  PLAYER = e.target.value;
+  try { localStorage.setItem('cdplay.player', PLAYER); } catch {}
+  $('scan').disabled = !PLAYER && !FILMDEV;
+  if (PLAYER) { status(''); startScan(); }
+};
+$('reload').onclick = loadPlayers;
+
+// ---------- sticky film device (Jellyfin) ----------
+let FILMDEV = '', FILMNOW = null;
+try { FILMDEV = localStorage.getItem('cdplay.filmdev') || ''; } catch {}
+async function loadFilmDevices() {
+  const sel = $('filmdev');
+  try {
+    const r = await fetch(API + 'jellyfin/sessions', { cache:'no-store' });
+    if (!r.ok) throw new Error(await errText(r));
+    const ss = (await r.json()).sessions || [];
+    ss.sort((a, b) => a.device.localeCompare(b.device));
+    sel.innerHTML = '<option value="">— film on: choose a device —</option>' +
+      ss.map(d => `<option value="${esc(d.device_id)}">${esc(d.device)} — ${esc(d.client)} (${esc(d.user)})</option>`).join('');
+    $('filmhint').style.display = ss.length ? 'none' : '';
+    const cur = ss.find(d => d.device_id === FILMDEV);
+    if (cur) { sel.value = FILMDEV; if (cur.now_playing) showFilm(cur.now_playing.title, cur.device); }
+    else { sel.value = ''; if (FILMDEV && ss.length) status('Your saved film device is not open. Choose another.', 'bad'); FILMDEV = ''; }
+  } catch (e) { sel.innerHTML = '<option value="">Jellyfin unreachable</option>'; $('filmhint').style.display = 'none'; status('Jellyfin: ' + e.message, 'bad'); FILMDEV = ''; }
+  $('scan').disabled = !PLAYER && !FILMDEV;
+}
+$('filmdev').onchange = e => {
+  FILMDEV = e.target.value;
+  try { localStorage.setItem('cdplay.filmdev', FILMDEV); } catch {}
+  $('scan').disabled = !PLAYER && !FILMDEV;
+  if (FILMDEV) { status(''); startScan(); }
+};
+$('filmreload').onclick = loadFilmDevices;
+async function errText(r) {
+  let j = {}; try { j = await r.json(); } catch {}
+  if (r.status === 404) return j.error || 'not found';
+  if (r.status === 409) return j.error || 'cannot be played here';
+  if (r.status === 502) return 'Jellyfin is unreachable.';
+  if (r.status === 503) return 'Jellyfin is not configured on the server (no API key).';
+  return j.error || 'HTTP ' + r.status;
+}
+async function playFilm(code, rec, index) {
+  if (!FILMDEV) { status('Choose a film device first (Film on:).', 'bad'); return; }
+  const more = rec.more || [];
+  if (index == null && more.length) { chooseFilm(code, rec); return; }
+  const r = await fetch(API + 'jellyfin/play', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ barcode: code, device_id: FILMDEV, ...(index != null ? { index } : {}) }) });
+  if (!r.ok) {
+    const msg = await errText(r);
+    status(r.status === 404 && /not open/.test(msg) ? msg + ' Then refresh the list.' : code + ': ' + msg, 'bad');
+    addHist('✗', code, 'film: ' + r.status); lastAt = 0; return;
+  }
+  const j = await r.json();
+  $('choosecard').style.display = 'none';
+  status('Playing on ' + j.device + ': ' + j.title, 'ok');
+  addHist('🎬', j.title, code);
+  showFilm(j.title, j.device + ' — ' + j.client);
+}
+function chooseFilm(code, rec) {
+  $('choosetitle').textContent = 'Which film on ' + (rec.title || code) + '?';
+  const names = [rec.title || 'Main film', ...(rec.more || []).map(m => m.title)];
+  const b = $('choosebtns'); b.innerHTML = '';
+  names.forEach((n, i) => { const x = document.createElement('button'); x.className = 'sec'; x.textContent = n;
+    x.onclick = async () => { try { await playFilm(code, rec, i); } catch (e) { status('Error: ' + e.message, 'bad'); } }; b.appendChild(x); });
+  $('choosecard').style.display = ''; status('Choose which film to play.');
+}
+function showFilm(title, where) {
+  $('filmcard').style.display = ''; $('ft').textContent = title || ''; $('fc').textContent = 'on ' + where;
+}
+const fctl = cmd => async () => {
+  try {
+    const r = await fetch(API + 'jellyfin/control', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ device_id: FILMDEV, cmd }) });
+    if (!r.ok) throw new Error(await errText(r));
+    if (cmd === 'stop') $('filmcard').style.display = 'none';
+  } catch (e) { status('Jellyfin: ' + e.message, 'bad'); }
+};
+$('fpp').onclick = fctl('playpause'); $('fstop').onclick = fctl('stop');
+
+// ---------- play ----------
+let HIST = [], busy = false, lastCode = '', lastAt = 0;
+async function playCode(raw) {
+  const code = canon(raw); if (!code) return;
+  if (!PLAYER && !FILMDEV) { status('Choose a player first.', 'bad'); return; }
+  if (busy || (code === lastCode && Date.now() - lastAt < 6000)) return;      // same CD still in view
+  busy = true; lastCode = code; lastAt = Date.now();
+  try {
+    status('Looking up ' + code + '…'); $('shelfline').textContent = '';
+    const r = await fetch(API + 'items/' + code, { cache:'no-store' });
+    if (r.status === 404) { status(code + ': not paired with an album yet. Pair it in Check.', 'bad'); addHist('✗', code, 'not paired'); return; }
+    if (!r.ok) throw new Error('save service HTTP ' + r.status);
+    const rec = await r.json();
+    shelfLine(code, rec);                                // where it lives (Shelf); in the background, never delays playback
+    const sys = rec.play && rec.play.system;
+    if (rec.status === 'shelf') { status('In Shelf, not playable: ' + (rec.title || code) + (rec.kind ? ' (' + rec.kind + ')' : ''), 'bad'); addHist('✗', rec.title || code, 'Shelf only'); return; }
+    if (sys === 'jellyfin') { await playFilm(code, rec); return; }
+    if (rec.kind && rec.kind !== 'cd') { status('Catalogued, not playable: ' + (rec.title || code) + ' (' + rec.kind + ')', 'bad'); addHist('✗', (rec.title || code) + ' (' + rec.kind + ')', 'not playable'); return; }
+    if (!PLAYER) { status('Choose a player first.', 'bad'); return; }
+    rec.album_id = sys === 'lyrion' ? rec.play.id : null; rec.album = rec.title; rec.artist = rec.creator;
+    if (rec.album_id == null) { status(code + ': ' + (rec.status === 'none' ? 'marked as not in the library.' : 'no library album yet (still rescanning?).'), 'bad'); addHist('✗', code, rec.status || 'no album'); return; }
+    await rpc(PLAYER, ['power', 1]);
+    await rpc(PLAYER, ['playlistcontrol', 'cmd:load', 'album_id:' + rec.album_id]);
+    status('Playing: ' + (rec.album || code), 'ok');
+    addHist('▶', (rec.album || code) + (rec.artist ? ' — ' + rec.artist : ''), code);
+    showNow(rec);
+  } catch (e) { status('Error: ' + e.message, 'bad'); lastAt = 0; }
+  finally { busy = false; }
+}
+// ---------- "Shelf: <location> · item" line under the status ----------
+let shelfSeq = 0;
+function shelfLine(code, rec) {
+  const el = $('shelfline'), seq = ++shelfSeq;
+  const draw = (loc, url) => {
+    if (seq !== shelfSeq) return;                        // a newer scan took over
+    el.innerHTML = 'Shelf: ' + (loc ? esc(loc) : 'no location') + (url ? ` · <a href="${esc(url)}" target="_blank" rel="noopener">item ↗</a>` : '');
+  };
+  if (rec.status === 'shelf' && rec.url) { draw(rec.location, rec.url); return; }   // answer came from Shelf already
+  if (rec.shelf_id == null) return;
+  fetch(API + 'shelf/item?code=' + encodeURIComponent(code), { cache:'no-store' })
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(j => draw(j.location, j.url))
+    .catch(() => { if (seq === shelfSeq) el.textContent = 'Shelf: location unavailable'; });
+}
+function showNow(rec) {
+  $('nowcard').style.display = '';
+  $('nt').textContent = rec.album || ''; $('na').textContent = rec.artist || '';
+  const pn = $('player').selectedOptions[0]; $('nc').textContent = 'on ' + (pn ? pn.textContent : '');
+}
+function addHist(icon, text, code) {
+  HIST.unshift(`<li>${icon} ${esc(text)} <span class="m">${esc(code)}</span></li>`); HIST = HIST.slice(0, 15);
+  $('hist').innerHTML = HIST.join('');
+}
+const ctl = cmd => async () => { try { await rpc(PLAYER, cmd); } catch (e) { status('Error: ' + e.message, 'bad'); } };
+$('pp').onclick = ctl(['pause']); $('halt').onclick = ctl(['stop']);
+$('next').onclick = ctl(['playlist', 'index', '+1']); $('prev').onclick = ctl(['playlist', 'index', '-1']);
+$('manual').onsubmit = e => { e.preventDefault(); playCode($('code').value); $('code').value = ''; };
+
+// ---------- camera: stays open between scans ----------
+let stream = null, timer = null, wake = null;
+async function startScan() {
+  if (stream) return;
+  if (!window.isSecureContext) { status('Camera needs HTTPS (open https://hibou/play.html).', 'bad'); return; }
+  let Det = window.BarcodeDetector;
+  if (!Det) {
+    try {
+      status('Loading barcode decoder…');
+      await new Promise((ok, bad) => { const s = document.createElement('script'); s.src = '/vendor/barcode-detector-3.2.3.js'; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
+      BarcodeDetectionAPI.setZXingModuleOverrides({ locateFile: (f, prefix) => f.endsWith('.wasm') ? '/vendor/zxing_reader.wasm' : prefix + f });
+      Det = BarcodeDetectionAPI.BarcodeDetector;
+    } catch (e) { status('Could not load barcode decoder. Type the digits instead.', 'bad'); return; }
+  }
+  let fmts = ['ean_13', 'upc_a', 'ean_8', 'upc_e', 'code_39', 'code_128', 'itf', 'codabar'];
+  try { const sup = await Det.getSupportedFormats(); fmts = fmts.filter(f => sup.includes(f)); } catch {}
+  const det = new Det({ formats: fmts });
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }); }
+  catch (e) { status('Camera error: ' + e.message, 'bad'); return; }
+  const v = $('cam'); v.srcObject = stream; v.style.display = 'block'; await v.play();
+  $('scan').style.display = 'none'; $('stop').style.display = '';
+  try { wake = await navigator.wakeLock?.request('screen'); } catch {}
+  status('Point the camera at a CD barcode…');
+  timer = setInterval(async () => {
+    if (busy) return;
+    try {
+      const codes = await det.detect(v);
+      if (codes.length) { if (navigator.vibrate) navigator.vibrate(60); playCode(codes[0].rawValue); }
+    } catch {}
+  }, 250);
+}
+function stopScan() {
+  clearInterval(timer); timer = null;
+  if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
+  try { wake?.release(); } catch {} wake = null;
+  $('cam').style.display = 'none'; $('scan').style.display = ''; $('stop').style.display = 'none';
+}
+$('scan').onclick = startScan; $('stop').onclick = () => { stopScan(); status(''); };
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); });
+
+// inside the hub, the link to Check switches the hub's view instead of loading a second copy of the page
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[data-hub]');
+  if (!a || !document.documentElement.classList.contains('embed') || parent === window) return;
+  e.preventDefault();
+  try { parent.location.hash = a.dataset.hub; } catch { location.href = a.href; }
+});
+
+Promise.all([loadPlayers(), loadFilmDevices()]).then(() => { if (PLAYER || FILMDEV) status('Tap "Start scanning" to begin.'); });
+</script>
+</body>
+</html>

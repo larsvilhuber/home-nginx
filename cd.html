@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>CD Library</title>
+<link rel="stylesheet" href="vendor/fontawesome-6.7.2/css/all.min.css">
 <style>
   :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --acc:#2457d6; --bar:#fff; }
   @media (prefers-color-scheme: dark) {
@@ -11,86 +12,140 @@
   }
   * { box-sizing:border-box; }
   html, body { height:100%; margin:0; }
-  body { background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; display:flex; flex-direction:column; }
-  header { flex:none; display:flex; align-items:center; gap:8px; padding:6px 8px; padding-top:max(6px, env(safe-area-inset-top)); background:var(--bar); border-bottom:1px solid #8883; position:relative; z-index:5; }
-  header h1 { flex:1; margin:0; font-size:1.05rem; }
-  .tabs { display:flex; gap:4px; }
-  .tabs button, #burger { font:inherit; border:0; border-radius:8px; padding:9px 13px; background:var(--card); color:var(--fg); cursor:pointer; }
-  .tabs button[aria-selected=true] { background:var(--acc); color:#fff; }
-  .ext { display:flex; gap:4px; }
-  .ext a { font-size:.9rem; border-radius:8px; padding:9px 11px; background:var(--card); color:var(--fg); text-decoration:none; }
-  #burger { display:none; font-size:1.2rem; line-height:1; }
-  .menu { display:none; }
+  body { background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; display:flex; flex-direction:column; overflow:hidden; }
+  [hidden] { display:none !important; }
+
+  /* compact top bar: menu button, where you are, and (wide screens) icon tabs */
+  header { flex:none; display:flex; align-items:center; gap:8px; min-width:0;
+           padding:6px max(8px, env(safe-area-inset-right)) 6px max(8px, env(safe-area-inset-left)); padding-top:max(6px, env(safe-area-inset-top));
+           background:var(--bar); border-bottom:1px solid #8883; position:relative; z-index:5; }
+  header h1 { flex:1; min-width:0; margin:0; font-size:1.05rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  header h1 a { color:inherit; text-decoration:none; }
+  header h1 .here { color:var(--mut); font-weight:600; }
+  header h1 .here i { color:var(--acc); margin:0 5px 0 2px; }
+  .hbtn, .tabs a, .ext a { font:inherit; border:0; border-radius:8px; background:var(--card); color:var(--fg); text-decoration:none; cursor:pointer;
+                           display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
+  .hbtn { flex:none; width:44px; height:44px; justify-content:center; font-size:1.15rem; }
+  .hbtn[aria-current=page], .tabs a[aria-current=page] { background:var(--acc); color:#fff; }
+  .tabs, .ext { display:none; gap:4px; }
+  .tabs a { padding:9px 12px; }
+  .ext a { padding:9px 11px; font-size:.9rem; }
+  .fa-arrow-up-right-from-square { font-size:.7em; opacity:.7; }
+  @media (min-width:820px) { .tabs { display:flex; } }
+  @media (min-width:1180px) { .ext { display:flex; } }
+
   main { flex:1; position:relative; min-height:0; }
   iframe { position:absolute; inset:0; width:100%; height:100%; border:0; background:var(--bg); display:none; }
   iframe.on { display:block; }
-  @media (max-width:640px) {
-    .tabs, .ext { display:none; }
-    #burger { display:block; }
-    .menu.open { display:flex; flex-direction:column; gap:6px; position:absolute; top:100%; left:0; right:0; padding:10px 12px 14px; background:var(--bar); border-bottom:1px solid #8883; box-shadow:0 8px 16px #0003; }
-    .menu a, .menu button { font:inherit; text-align:left; width:100%; padding:14px; border:0; border-radius:10px; background:var(--card); color:var(--fg); text-decoration:none; }
-    .menu button[aria-selected=true] { background:var(--acc); color:#fff; }
-    .menu hr { border:0; border-top:1px solid #8884; margin:4px 0; width:100%; }
-  }
+
+  /* full-screen menu of big icon buttons (the start page, and what the menu button returns to) */
+  #menu { position:absolute; inset:0; overflow-y:auto; overflow-x:hidden; background:var(--bg);
+          padding:16px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+  .grid { max-width:760px; margin:0 auto; display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:12px; }
+  @media (min-width:600px) { .grid { grid-template-columns:repeat(3, minmax(0, 1fr)); gap:14px; } }
+  .tile { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; min-height:128px; padding:14px 10px;
+          border-radius:16px; background:var(--card); color:var(--fg); text-decoration:none; text-align:center;
+          border:2px solid transparent; -webkit-tap-highlight-color:transparent; }
+  .tile:hover, .tile:focus-visible { border-color:var(--acc); outline:none; }
+  .tile:active { transform:scale(.98); }
+  .tile > i:first-child { font-size:2.1rem; color:var(--acc); margin-bottom:2px; }
+  .tile .name { font-weight:700; font-size:1.08rem; }
+  .tile .desc { color:var(--mut); font-size:.8rem; line-height:1.25; }
+  .tile[aria-current=page] { border-color:var(--acc); }
+  .grid.small .tile { min-height:72px; flex-direction:row; gap:10px; }
+  .grid.small .tile > i:first-child { font-size:1.3rem; margin:0; color:var(--mut); }
+  .grid.small .tile .name { font-size:.95rem; font-weight:600; }
+  #menu h2 { max-width:760px; margin:22px auto 10px; font-size:.8rem; font-weight:600; color:var(--mut); text-transform:uppercase; letter-spacing:.05em; }
 </style>
 </head>
 <body>
 <header>
-  <h1>CD Library</h1>
-  <nav class="tabs" role="tablist" id="tabs"></nav>
+  <a class="hbtn" id="home" href="#" aria-label="Menu" title="Menu"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i></a>
+  <h1><a href="#">CD Library</a><span class="here" id="here"></span></h1>
+  <nav class="tabs" id="tabs" aria-label="Sections"></nav>
   <div class="ext" id="ext"></div>
-  <button id="burger" aria-label="Menu" aria-expanded="false">&#9776;</button>
-  <nav class="menu" id="menu"></nav>
 </header>
-<main id="views"></main>
+<main id="views">
+  <section id="menu" aria-label="Menu">
+    <div class="grid" id="grid"></div>
+    <h2>Elsewhere</h2>
+    <div class="grid small" id="gridext"></div>
+  </section>
+</main>
 <script>
+// Sections. Pages load relative to this one (so a worktree copy of the hub shows its own pages).
+// tabbed: the page has CD | DVD tabs; #check/dvd picks one, and the page reports its tab back.
 const VIEWS = [
-  { id:'play',   label:'CD / DVD Play',    src:'/cdplay.html' },
-  { id:'check',  label:'CD Check',   src:'/cdcheck.html' },
-  { id:'tag',    label:'CD Tag',     src:'/cdtag.html' },
-  { id:'dvdtag', label:'DVD Tag',    src:'/dvdtag.html' },
-  { id:'dvdcheck', label:'DVD Check', src:'/dvdcheck.html' },
-  { id:'catalog', label:'Cataloguer', src:'/catalog.html' },
-  { id:'review', label:'Tag Review', src:'/review.html' },
+  { id:'play',    label:'Play',       icon:'fa-circle-play',     src:'play.html',    desc:'Scan a CD or DVD to play it' },
+  { id:'check',   label:'Check',      icon:'fa-barcode',         src:'check.html',   desc:'Is it in the library?', tabbed:true },
+  { id:'tag',     label:'Tag',        icon:'fa-tag',             src:'tag.html',     desc:'Codes, DVD import, labels', tabbed:true },
+  { id:'catalog', label:'Cataloguer', icon:'fa-book-open',       src:'catalog.html', desc:'Add anything to Shelf' },
+  { id:'review',  label:'Review',     icon:'fa-clipboard-check', src:'review.html',  desc:'Check MusicBrainz tags' },
 ];
 const EXT = [
-  { label:'CD Ripper',      href:'http://hibou:8086/' },
-  { label:'Squeeze server', href:'http://hibou:9000/' },
+  { label:'CD Ripper',      icon:'fa-compact-disc', href:'http://hibou:8086/' },
+  { label:'Squeeze server', icon:'fa-music',        href:'http://hibou:9000/' },
 ];
+// old section names (bookmarks, links in older pages) -> [section, tab]
+const LEGACY = {
+  cdplay:['play'], dvdplay:['play'],
+  cdcheck:['check', 'cd'], dvdcheck:['check', 'dvd'],
+  cdtag:['tag', 'cd'], dvdtag:['tag', 'dvd'],
+  catalogue:['catalog'], cataloguer:['catalog'], menu:[''], home:[''],
+};
 const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const frames = {};
-function show(id, push) {
-  const v = VIEWS.find(x => x.id === id) || VIEWS[0];
-  if (!frames[v.id]) {                       // load on first visit, then keep alive (camera, queues, drafts)
-    const f = document.createElement('iframe');
-    f.src = v.src + '?embed=1'; f.title = v.label; f.allow = 'camera; clipboard-write';
-    $('views').append(f); frames[v.id] = f;
-  }
-  for (const k in frames) frames[k].classList.toggle('on', k === v.id);
-  document.querySelectorAll('[data-view]').forEach(b => b.setAttribute('aria-selected', b.dataset.view === v.id));
-  document.title = 'CD Library · ' + v.label;
-  if (push !== false) { try { history.replaceState(null, '', '#' + v.id); } catch {} }
-  closeMenu();
+let CUR = '';
+
+function parseHash(h) {                     // "check/dvd" -> { v, tab:'dvd' }; "" or unknown -> { v:null } = menu
+  let [id, tab] = String(h || '').replace(/^#/, '').toLowerCase().split('/');
+  if (LEGACY[id]) { const m = LEGACY[id]; id = m[0]; tab = m[1] || tab; }
+  const v = VIEWS.find(x => x.id === id) || null;
+  return { v, tab: v && v.tabbed && /^(cd|dvd)$/.test(tab || '') ? tab : '' };
 }
-function closeMenu() { $('menu').classList.remove('open'); $('burger').setAttribute('aria-expanded', 'false'); }
-VIEWS.forEach(v => {
-  for (const host of [$('tabs'), $('menu')]) {
-    const b = document.createElement('button');
-    b.textContent = v.label; b.dataset.view = v.id; b.setAttribute('role', 'tab'); b.onclick = () => show(v.id);
-    host.append(b);
+function setHash(h) { try { history.replaceState(null, '', h ? '#' + h : location.pathname + location.search); } catch {} }
+function mark(el, on) { if (on) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current'); }
+
+function show(hash) {
+  const { v, tab } = parseHash(hash);
+  CUR = v ? v.id : '';
+  if (v && !frames[v.id]) {                 // load on first visit, then keep alive (camera, queues, drafts)
+    const f = document.createElement('iframe');
+    f.src = v.src + '?embed=1' + (tab ? '&tab=' + tab : ''); f.title = v.label; f.allow = 'camera; clipboard-write; screen-wake-lock';
+    $('views').append(f); frames[v.id] = f;
+  } else if (v && tab) {                    // already loaded: ask it to switch tabs
+    try { frames[v.id].contentWindow.postMessage({ type:'media-set-tab', tab }, location.origin); } catch {}
   }
+  for (const k in frames) frames[k].classList.toggle('on', k === CUR);
+  $('menu').hidden = !!v;
+  document.querySelectorAll('[data-view]').forEach(a => mark(a, a.dataset.view === CUR));
+  mark($('home'), !v);
+  $('here').innerHTML = v ? ` · <i class="fa-solid ${v.icon}" aria-hidden="true"></i>${esc(v.label)}` : '';
+  document.title = 'CD Library' + (v ? ' · ' + v.label : '');
+  setHash(v ? v.id + (tab ? '/' + tab : '') : '');
+  if (!v) $('menu').scrollTop = 0;
+}
+
+// menu tiles, wide-screen tabs, outside links
+$('grid').innerHTML = VIEWS.map(v => `<a class="tile" href="#${v.id}" data-view="${v.id}"><i class="fa-solid ${v.icon}" aria-hidden="true"></i>
+  <span class="name">${esc(v.label)}</span><span class="desc">${esc(v.desc)}</span></a>`).join('');
+$('tabs').innerHTML = VIEWS.map(v => `<a href="#${v.id}" data-view="${v.id}"><i class="fa-solid ${v.icon}" aria-hidden="true"></i>${esc(v.label)}</a>`).join('');
+const extLink = (e, cls) => `<a${cls ? ` class="${cls}"` : ''} href="${esc(e.href)}" target="_blank" rel="noopener"><i class="fa-solid ${e.icon}" aria-hidden="true"></i>
+  <span class="name">${esc(e.label)}</span><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>`;
+$('gridext').innerHTML = EXT.map(e => extLink(e, 'tile')).join('');
+$('ext').innerHTML = EXT.map(e => extLink(e, '')).join('');
+// "#" links (menu button, title): hashchange does not fire for an empty hash, so route them here
+document.querySelectorAll('a[href="#"]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); show(''); }));
+
+addEventListener('hashchange', () => show(location.hash));
+// a tabbed page reports its tab: keep the address in step (#check/dvd), so a reload or bookmark returns there
+addEventListener('message', e => {
+  if (e.origin !== location.origin || !e.data || e.data.type !== 'media-tab') return;
+  const v = VIEWS.find(x => x.tabbed && x.id === e.data.page && frames[x.id] && e.source === frames[x.id].contentWindow);
+  if (v && CUR === v.id && /^(cd|dvd)$/.test(e.data.tab)) setHash(v.id + '/' + e.data.tab);
 });
-$('menu').append(document.createElement('hr'));
-EXT.forEach(e => {
-  for (const host of [$('ext'), $('menu')]) {
-    const a = document.createElement('a');
-    a.textContent = e.label + ' ↗'; a.href = e.href; a.target = '_blank'; a.rel = 'noopener';
-    host.append(a);
-  }
-});
-$('burger').onclick = () => { const o = $('menu').classList.toggle('open'); $('burger').setAttribute('aria-expanded', o); };
-addEventListener('hashchange', () => show(location.hash.slice(1), false));
-show(location.hash.slice(1), false);
+show(location.hash);
 </script>
 </body>
 </html>
