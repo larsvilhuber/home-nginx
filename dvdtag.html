@@ -378,7 +378,7 @@ searchWidget($('csearch'), { q: '', year: '', onPick: r => {
 $('cadd').onclick = async () => {
   const title = $('ctitle').value.trim(); if (!title) { status('Give it a title.', 'bad'); return; }
   const code = CCODE(); if (code.barcode === '') { status('Scan or type the barcode, or choose an LV label.', 'bad'); return; }
-  const b = { title, kind: $('ckind').value, ...code };
+  const b = { title, kind: $('ckind').value, ...(code.mint_label ? { mint_label: true } : { code: code.barcode }) };   // POST /items takes code, not barcode
   if ($('ccreator').value.trim()) b.creator = $('ccreator').value.trim();
   if ($('cyear').value) b.year = +$('cyear').value;
   if ($('ccatno').value.trim()) b.catno = $('ccatno').value.trim();
