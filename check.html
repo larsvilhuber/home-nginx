@@ -129,6 +129,24 @@ const CHECK = {
     const n = document.getElementById(tab + 'note'); if (n) n.textContent = note || '';
     return true;
   },
+  // Shelf block of a record (both tabs): "Shelf: location · item ↗" when linked; "Link to Shelf item" when the record
+  // is not in Shelf, its push failed (shelf_error), or a push found a hand-made item (shelf_candidate).
+  shelf(host, code, rec) {
+    if (!host || !rec) return;
+    const esc = MediaUI.esc, sid = rec.shelf_id ?? null, cand = rec.shelf_candidate ?? null;
+    const needs = sid == null || !!rec.shelf_error || cand != null;
+    host.innerHTML = `<div data-line class="m">${sid == null ? 'Not in Shelf yet.' : ''}</div>
+      ${rec.shelf_error ? `<div class="m" style="color:var(--no)">Shelf push: ${esc(rec.shelf_error)}</div>` : ''}
+      ${cand != null ? `<div class="m" style="color:var(--warn)">Shelf already has an item for this (#${esc(cand)}), made by hand: link to it instead of making a new one.</div>` : ''}
+      ${needs ? `<div class="row" data-open><button class="sec sm" type="button">Link to Shelf item…</button></div><div data-sl></div>` : ''}`;
+    const line = host.querySelector('[data-line]');
+    if (sid != null) MediaUI.shelfLine(line, code, sid);
+    if (!needs) return;
+    const open = () => { host.querySelector('[data-open]').hidden = true;
+      MediaUI.shelfLink(host.querySelector('[data-sl]'), { code, candidate: cand ?? '', onDone: j => MediaUI.shelfLine(line, code, j.shelf_id) }); };
+    host.querySelector('[data-open] button').onclick = open;
+    if (cand != null) open();
+  },
 };
 </script>
 <script>
@@ -348,7 +366,9 @@ function renderConfirmed(code, rec) {
   $('out').innerHTML = `<div class="card"><span class="badge ${bc}">${bt}</span>
     ${none ? '' : `<div class="t">${esc(rec.album)}</div><div class="m">${esc(rec.artist)}</div><div class="m">${esc(rip ? rec.arm_folder : rec.folder)}</div>`}
     <div class="m" style="margin-top:6px">${esc(rec.mb_title)} ${rec.mb_artist ? '— ' + esc(rec.mb_artist) : ''} · saved ${esc((rec.saved || '').slice(0, 10))}</div>
-    <div class="btnrow">${rip ? '<button type="button" id="doimp">Import to library</button>' : ''}<button type="button" class="sec" id="change">Change</button><button type="button" class="sec" id="forget">Forget</button></div></div>`;
+    <div class="btnrow">${rip ? '<button type="button" id="doimp">Import to library</button>' : ''}<button type="button" class="sec" id="change">Change</button><button type="button" class="sec" id="forget">Forget</button></div>
+    <div id="cshelf" style="margin-top:8px"></div></div>`;
+  CHECK.shelf($('cshelf'), code, rec);
   if (rip) $('doimp').onclick = () => runImport(code, rec);
   $('change').onclick = () => checkBarcode(code, true);
   $('forget').onclick = async () => {
@@ -526,10 +546,37 @@ async function check(raw) {
       status(code + ': ' + (j.all_ok === true ? 'all checks passed.' : j.all_ok === false ? 'some checks failed. Try "Rebuild + rescan".' : 'some checks could not be made.'), j.all_ok === true ? 'ok' : j.all_ok === false ? 'bad' : '');
     }
     html += `<div class="row"><button id="rebuild" class="sec">Rebuild + rescan</button><button id="recheck" class="sec">Re-check</button></div><div id="rbout"></div>`;
+    html += `<div class="card" id="dfilm"></div><div class="card" id="dshelf"></div>`;
     $('dout').innerHTML = html;
     $('rebuild').onclick = rebuild; $('recheck').onclick = () => check(CUR);
+    filmBlock(code, j, rec);
+    CHECK.shelf($('dshelf'), code, rec);
   } catch (e) { status('Error: ' + e.message, 'bad'); cam.forget(); }
   finally { busy = false; }
+}
+// Link / unlink the film this disc plays (a film already in movies.tsv / Jellyfin; nothing is copied or moved).
+function filmBlock(code, j, rec) {
+  const host = $('dfilm'), films = j.films || [];
+  if (rec.play && rec.play.system === 'lyrion') { host.remove(); return; }
+  const missing = films.length && films.some(f => f.file_exists && f.file_exists.ok === false);
+  const relink = () => setTimeout(() => check(code), 800);
+  if (!films.length || missing) {
+    host.innerHTML = `<div class="t">Link to a film already in the library</div>
+      <div class="m">${films.length ? 'The film file recorded for this code is missing. Pick the film it should play instead:' : 'This disc is catalogued but plays nothing. If its film is already ripped in the Jellyfin library, find it here:'}</div><div data-fl></div>`;
+    MediaUI.filmLink(host.querySelector('[data-fl]'), { code, title: rec.title, replace: !!missing, onDone: r => { status('Linked ' + code + ' to ' + r.linked.jellyfin_title + '.', 'ok'); relink(); } });
+    return;
+  }
+  host.innerHTML = `<div class="row" style="margin:0"><button class="sec sm" type="button" data-more>Add another film on this disc…</button><button class="sec sm" type="button" data-unlink>Unlink film${films.length > 1 ? 's' : ''}</button></div><div data-fl></div>`;
+  host.querySelector('[data-more]').onclick = e => {
+    e.target.disabled = true;
+    MediaUI.filmLink(host.querySelector('[data-fl]'), { code, title: '', asMore: true, onDone: r => { status('Added ' + r.linked.jellyfin_title + ' to ' + code + '.', 'ok'); relink(); } });
+  };
+  host.querySelector('[data-unlink]').onclick = async () => {
+    const names = films.map(f => f.jellyfin_title || f.title).join(', ');
+    if (!confirm('Unlink ' + code + ' from ' + names + '?\n\nThe film files stay in the library; the record goes back to "catalogued, not playable".')) return;
+    try { await MediaUI.unlinkFilm(code); status('Unlinked ' + code + '.', 'ok'); check(code); }
+    catch (e) { status('Error: ' + e.message, 'bad'); }
+  };
 }
 async function rebuild() {
   const b = $('rebuild'); b.disabled = true; $('rbout').innerHTML = '<div class="m">Rebuilding the Jellyfin list and rescanning (can take a while)…</div>';

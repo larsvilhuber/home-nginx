@@ -130,6 +130,7 @@
       <label class="lbl">Shelf location<br><select id="floc"><option value="">Loading locations…</option></select></label>
     </div>
     <div class="hint" id="kindhint"></div>
+    <div id="flib"></div>
     <h3 style="font-size:.95rem;margin:12px 0 2px">Code</h3>
     <div id="fcode"></div>
     <label class="chk"><input type="checkbox" id="fpush" checked> Send to Shelf</label>
@@ -157,6 +158,7 @@
   <video id="cam" playsinline muted></video>
 </main>
 
+<script src="media-ui.js"></script>
 <script>
 const API = '/cdcheck-api/', SHEET = 18, SHELF_BASE = 'https://hibou:18443';
 const $ = id => document.getElementById(id);
@@ -243,6 +245,16 @@ function readForm() { const o = {}; for (const k of FIELDS) o[k] = ($('f' + k).v
 function clearForm() {
   for (const k of FIELDS) if (k !== 'kind') $('f' + k).value = '';
   ORIGIN = { source: 'manual' }; drawOrigin(); FORMCODE = codeWidget($('fcode'), {}); $('fdup').innerHTML = '';
+  $('flib').innerHTML = ''; LIBWANT = null; LIBTOK++;
+}
+// a film picked from TMDB that is already ripped in the Jellyfin library: offer to link the new code to it
+let LIBWANT = null, LIBTOK = 0;
+async function filmHint(r, kind) {
+  const tok = ++LIBTOK; LIBWANT = null; $('flib').innerHTML = '';
+  if (!FILMS.includes(kind) || r.source !== 'tmdb') return;
+  const get = await MediaUI.libraryHint($('flib'), { tmdb_id: (r.ids || {}).tmdb_id || r.source_id,
+    titles: [r.title, r.original_title, r.tmdb_title], year: r.year });
+  if (tok === LIBTOK) LIBWANT = get; else $('flib').innerHTML = '';
 }
 $('fclear').onclick = () => { clearForm(); document.querySelectorAll('.res.sel').forEach(x => x.classList.remove('sel')); };
 function drawOrigin() {
@@ -334,6 +346,7 @@ function pickResult(r) {
             format: r.format || '', country: r.country || '' });
   ORIGIN = { source: r.source, source_id: r.source_id, url: r.url, ids: { ...(r.ids || {}) }, cover_url: r.cover_url || '' };
   drawOrigin();
+  filmHint(r, kind);
   const scanned = canon($('lbarcode').value);             // a barcode typed/scanned for the search is the item's own
   FORMCODE = codeWidget($('fcode'), { suggest: scanned || '' });
   if (!scanned && r.barcode) $('fcode').insertAdjacentHTML('beforeend', `<div class="m">This release's barcode is ${esc(r.barcode)}; if your copy carries it, choose "Use the barcode on the item" and scan it.</div>`);
@@ -397,7 +410,8 @@ function showAlready(rec, it) {
   $('sout').innerHTML = `<div class="card linkbox" style="margin:6px 0 0"><b>Already catalogued</b> as <b>${esc(rec.code)}</b>: ${esc(rec.title)}${rec.creator ? ' — ' + esc(rec.creator) : ''}
     <span class="m">(${esc(rec.kind)}, ${esc(rec.status)})</span>
     ${sid != null ? `<div>Shelf item <a target="_blank" rel="noopener" href="${esc((it && it.url) || shelfUrl(sid))}">#${esc(sid)} ↗</a>${it && it.location ? ' · ' + esc(it.location) : ''}</div>` : '<div class="m">Not in Shelf yet.</div>'}
-    <div class="m">Nothing to do here. To change it, edit it in Shelf${rec.kind === 'cd' ? ' or CD Check' : ''}.</div></div>`;
+    ${sid != null ? `<div class="m">Nothing to do here. To change it, edit it in Shelf${rec.kind === 'cd' ? ' or CD Check' : ''}.</div>` : '<div id="alink"></div>'}</div>`;
+  if (sid == null) MediaUI.shelfLink($('alink'), { code: rec.code, candidate: rec.shelf_candidate ?? '', onDone: () => loadRecent() });
   status(rec.code + ' is already catalogued.', 'good');
   if (sid != null && !(it && it.location)) api('shelf/item?code=' + encodeURIComponent(rec.code)).then(r => {
     const a = $('sout').querySelector('a'); if (r.ok && r.j.location && a) a.insertAdjacentText('afterend', ' · ' + r.j.location);
@@ -462,8 +476,15 @@ async function save() {
     }
     if (!r.ok) throw new Error(r.j.error || 'HTTP ' + r.status);
     ALLOW_DUP = false;
+    const want = LIBWANT && FILMS.includes(body.kind) ? LIBWANT() : null;
     showResult(r.j);
     status('Catalogued as ' + r.j.code + '.', 'good');
+    if (want) {                                           // link the new code to the film already in the library
+      const l = await MediaUI.linkFilmAfterSave(r.j.code, want);
+      $('result').firstElementChild.insertAdjacentHTML('beforeend', l.ok
+        ? `<div class="good">Linked to the film in your library: <b>${esc(l.linked.jellyfin_title)}</b>${l.linked.version ? ' [' + esc(l.linked.version) + ']' : ''} — it plays from CD / DVD Play.</div>`
+        : `<div class="bad">Could not link to the film in your library: ${esc(l.error)}. Do it from Check (DVD).</div>`);
+    }
     clearForm(); LRES = []; $('lres').innerHTML = ''; $('sout').innerHTML = ''; $('sin').value = '';
     ['lq', 'lartist', 'lcatno', 'lbarcode', 'lyear'].forEach(i => $(i).value = '');
     await Promise.all([refresh().catch(() => {}), loadRecent()]);
@@ -488,7 +509,8 @@ function showResult(rec, existing) {
     <div><b class="good">${existing ? 'Existing record' : 'Catalogued'}</b> as <b style="font-size:1.15rem">${esc(rec.code)}</b></div>
     <div>${esc(rec.title)}${rec.creator ? ' — ' + esc(rec.creator) : ''} <span class="m">(${esc(rec.kind)}${rec.year ? ', ' + esc(rec.year) : ''})</span></div>
     ${rec.queued ? '<div>An LV label was queued: print it below and stick it on the sleeve.</div>' : ''}
-    <div id="shst">${shelfState(rec, pushMode)}</div></div>`;
+    <div id="shst">${shelfState(rec, pushMode)}</div>${existing && rec.shelf_id == null ? '<div id="rlink"></div>' : ''}</div>`;
+  if (existing && rec.shelf_id == null) MediaUI.shelfLink($('rlink'), { code: rec.code, candidate: rec.shelf_candidate ?? '', onDone: () => loadRecent() });
   $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   if (!existing && pushMode !== 'off') pollShelf(rec.code, pushMode, ++pollToken);
   else if (rec.shelf_id != null) showLoc(rec.code);

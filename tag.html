@@ -124,6 +124,7 @@
       <div class="row"><input type="text" id="ccatno" placeholder="catalogue no."></div>
       <div class="row"><textarea id="cnotes" rows="2" placeholder="notes"></textarea></div>
       <div id="csearch"></div>
+      <div id="clib"></div>
       <div id="ccode"></div>
       <div class="row"><button id="cadd">Add to catalogue</button></div>
       <div id="cout"></div>
@@ -576,10 +577,13 @@ async function poll(job, total) {
 }
 
 // ---------- catalogue only ----------
-let CCODE = codeWidget($('ccode'), 'catcode'), CTMDB = null;
-searchWidget($('csearch'), { q: '', year: '', onPick: r => {
+let CCODE = codeWidget($('ccode'), 'catcode'), CTMDB = null, CLIB = null, CLIBTOK = 0;
+searchWidget($('csearch'), { q: '', year: '', onPick: async r => {
   $('ctitle').value = r.original_title && /^[\x00-ɏ]*$/.test(r.original_title) ? r.original_title : r.title; $('cyear').value = r.year || ''; CTMDB = r.tmdb_id;
   if ($('ckind').value !== 'dvd' && $('ckind').value !== 'bluray' && $('ckind').value !== 'vhs') $('ckind').value = 'dvd';
+  const tok = ++CLIBTOK; CLIB = null;              // already ripped in the Jellyfin library? offer to link this disc to it
+  const get = await MediaUI.libraryHint($('clib'), { tmdb_id: r.tmdb_id, titles: [r.proposed_title, r.title, r.original_title], year: r.year });
+  if (tok === CLIBTOK) CLIB = get;
 } });
 $('cadd').onclick = async () => {
   const title = $('ctitle').value.trim(); if (!title) { status('Give it a title.', 'bad'); return; }
@@ -598,6 +602,13 @@ $('cadd').onclick = async () => {
     const c = r.j.code || (r.j.record && r.j.record.code) || code.barcode;
     $('cout').innerHTML = `<div class="good">Catalogued as <b>${esc(c)}</b>${r.j.queued ? ' — label queued, print it below.' : '.'}</div>`;
     status('Catalogued ' + c + '.', 'good'); CTMDB = null;
+    const want = CLIB && ['dvd', 'bluray', 'vhs'].includes(b.kind) ? CLIB() : null;
+    if (want) {
+      const l = await MediaUI.linkFilmAfterSave(c, want);
+      $('cout').insertAdjacentHTML('beforeend', l.ok ? `<div class="good">Linked to the film in your library: <b>${esc(l.linked.jellyfin_title)}</b> — it plays from Play.</div>`
+        : `<div class="bad">Could not link to the film in your library: ${esc(l.error)}. Do it from Check (DVD).</div>`);
+    }
+    CLIB = null; CLIBTOK++; $('clib').innerHTML = '';
     ['ctitle', 'ccreator', 'cyear', 'ccatno', 'cnotes'].forEach(i => $(i).value = '');
     CCODE = codeWidget($('ccode'), 'catcode'); await refresh();
   } catch (e) { status('Error: ' + e.message, 'bad'); }
