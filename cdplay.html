@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CD Play</title>
+<title>CD / DVD Play</title>
 <style>
   :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --ok:#1b7f3b; --no:#b3261e; --warn:#9a6700; --acc:#2457d6; }
   @media (prefers-color-scheme: dark) {
@@ -35,13 +35,19 @@
 </head>
 <body>
 <main>
-  <h1>CD Play</h1>
-  <div class="sub">Pick a player once, then scan a CD's barcode to play it. Pair new barcodes in <a href="/cd.html#check" target="_top">CD Check</a>.</div>
+  <h1>CD / DVD Play</h1>
+  <div class="sub">Pick a player once, then scan a CD's barcode to play it (films play on a Jellyfin device). Pair new barcodes in <a href="/cd.html#check" target="_top">CD Check</a>.</div>
 
   <div class="row">
     <select id="player"><option value="">Loading players…</option></select>
     <button class="sec" id="reload" title="reload player list">↻</button>
   </div>
+
+  <div class="row">
+    <select id="filmdev"><option value="">Loading film devices…</option></select>
+    <button class="sec" id="filmreload" title="reload Jellyfin devices">↻</button>
+  </div>
+  <div class="sub" id="filmhint" style="display:none">Open Jellyfin on the TV and sign in, then refresh.</div>
 
   <video id="cam" playsinline muted></video>
   <div class="row">
@@ -57,6 +63,19 @@
       <button class="sec" id="pp">⏯</button>
       <button class="sec" id="next">⏭</button>
       <button class="sec" id="halt">⏹</button>
+    </div>
+  </div>
+
+  <div id="choosecard" class="card" style="display:none">
+    <div class="t" id="choosetitle">Which film?</div>
+    <div class="row" style="flex-wrap:wrap" id="choosebtns"></div>
+  </div>
+
+  <div id="filmcard" class="card" style="display:none">
+    <div class="t" id="ft"></div><div class="m" id="fc"></div>
+    <div class="row transport">
+      <button class="sec" id="fpp">⏯ Pause / resume</button>
+      <button class="sec" id="fstop">⏹ Stop</button>
     </div>
   </div>
 
@@ -95,29 +114,105 @@ async function loadPlayers() {
     if (PLAYER && ps.some(p => p.playerid === PLAYER)) sel.value = PLAYER;
     else { sel.value = ''; if (PLAYER) status('Your saved player is no longer listed. Choose another.', 'bad'); PLAYER = ''; }
   } catch (e) { sel.innerHTML = '<option value="">Lyrion unreachable</option>'; status('Error: ' + e.message, 'bad'); }
-  $('scan').disabled = !PLAYER;
+  $('scan').disabled = !PLAYER && !FILMDEV;
 }
 $('player').onchange = e => {
   PLAYER = e.target.value;
   try { localStorage.setItem('cdplay.player', PLAYER); } catch {}
-  $('scan').disabled = !PLAYER;
+  $('scan').disabled = !PLAYER && !FILMDEV;
   if (PLAYER) { status(''); startScan(); }
 };
 $('reload').onclick = loadPlayers;
+
+// ---------- sticky film device (Jellyfin) ----------
+let FILMDEV = '', FILMNOW = null;
+try { FILMDEV = localStorage.getItem('cdplay.filmdev') || ''; } catch {}
+async function loadFilmDevices() {
+  const sel = $('filmdev');
+  try {
+    const r = await fetch(API + 'jellyfin/sessions', { cache:'no-store' });
+    if (!r.ok) throw new Error(await errText(r));
+    const ss = (await r.json()).sessions || [];
+    ss.sort((a, b) => a.device.localeCompare(b.device));
+    sel.innerHTML = '<option value="">— film on: choose a device —</option>' +
+      ss.map(d => `<option value="${esc(d.device_id)}">${esc(d.device)} — ${esc(d.client)} (${esc(d.user)})</option>`).join('');
+    $('filmhint').style.display = ss.length ? 'none' : '';
+    const cur = ss.find(d => d.device_id === FILMDEV);
+    if (cur) { sel.value = FILMDEV; if (cur.now_playing) showFilm(cur.now_playing.title, cur.device); }
+    else { sel.value = ''; if (FILMDEV && ss.length) status('Your saved film device is not open. Choose another.', 'bad'); FILMDEV = ''; }
+  } catch (e) { sel.innerHTML = '<option value="">Jellyfin unreachable</option>'; $('filmhint').style.display = 'none'; status('Jellyfin: ' + e.message, 'bad'); FILMDEV = ''; }
+  $('scan').disabled = !PLAYER && !FILMDEV;
+}
+$('filmdev').onchange = e => {
+  FILMDEV = e.target.value;
+  try { localStorage.setItem('cdplay.filmdev', FILMDEV); } catch {}
+  $('scan').disabled = !PLAYER && !FILMDEV;
+  if (FILMDEV) { status(''); startScan(); }
+};
+$('filmreload').onclick = loadFilmDevices;
+async function errText(r) {
+  let j = {}; try { j = await r.json(); } catch {}
+  if (r.status === 404) return j.error || 'not found';
+  if (r.status === 409) return j.error || 'cannot be played here';
+  if (r.status === 502) return 'Jellyfin is unreachable.';
+  if (r.status === 503) return 'Jellyfin is not configured on the server (no API key).';
+  return j.error || 'HTTP ' + r.status;
+}
+async function playFilm(code, rec, index) {
+  if (!FILMDEV) { status('Choose a film device first (Film on:).', 'bad'); return; }
+  const more = rec.more || [];
+  if (index == null && more.length) { chooseFilm(code, rec); return; }
+  const r = await fetch(API + 'jellyfin/play', { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ barcode: code, device_id: FILMDEV, ...(index != null ? { index } : {}) }) });
+  if (!r.ok) {
+    const msg = await errText(r);
+    status(r.status === 404 && /not open/.test(msg) ? msg + ' Then refresh the list.' : code + ': ' + msg, 'bad');
+    addHist('✗', code, 'film: ' + r.status); lastAt = 0; return;
+  }
+  const j = await r.json();
+  $('choosecard').style.display = 'none';
+  status('Playing on ' + j.device + ': ' + j.title, 'ok');
+  addHist('🎬', j.title, code);
+  showFilm(j.title, j.device + ' — ' + j.client);
+}
+function chooseFilm(code, rec) {
+  $('choosetitle').textContent = 'Which film on ' + (rec.title || code) + '?';
+  const names = [rec.title || 'Main film', ...(rec.more || []).map(m => m.title)];
+  const b = $('choosebtns'); b.innerHTML = '';
+  names.forEach((n, i) => { const x = document.createElement('button'); x.className = 'sec'; x.textContent = n;
+    x.onclick = async () => { try { await playFilm(code, rec, i); } catch (e) { status('Error: ' + e.message, 'bad'); } }; b.appendChild(x); });
+  $('choosecard').style.display = ''; status('Choose which film to play.');
+}
+function showFilm(title, where) {
+  $('filmcard').style.display = ''; $('ft').textContent = title || ''; $('fc').textContent = 'on ' + where;
+}
+const fctl = cmd => async () => {
+  try {
+    const r = await fetch(API + 'jellyfin/control', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ device_id: FILMDEV, cmd }) });
+    if (!r.ok) throw new Error(await errText(r));
+    if (cmd === 'stop') $('filmcard').style.display = 'none';
+  } catch (e) { status('Jellyfin: ' + e.message, 'bad'); }
+};
+$('fpp').onclick = fctl('playpause'); $('fstop').onclick = fctl('stop');
 
 // ---------- play ----------
 let HIST = [], busy = false, lastCode = '', lastAt = 0;
 async function playCode(raw) {
   const code = canon(raw); if (!code) return;
-  if (!PLAYER) { status('Choose a player first.', 'bad'); return; }
+  if (!PLAYER && !FILMDEV) { status('Choose a player first.', 'bad'); return; }
   if (busy || (code === lastCode && Date.now() - lastAt < 6000)) return;      // same CD still in view
   busy = true; lastCode = code; lastAt = Date.now();
   try {
     status('Looking up ' + code + '…');
-    const r = await fetch(API + 'barcodes/' + code, { cache:'no-store' });
+    const r = await fetch(API + 'items/' + code, { cache:'no-store' });
     if (r.status === 404) { status(code + ': not paired with an album yet. Pair it in CD Check.', 'bad'); addHist('✗', code, 'not paired'); return; }
     if (!r.ok) throw new Error('save service HTTP ' + r.status);
     const rec = await r.json();
+    const sys = rec.play && rec.play.system;
+    if (sys === 'jellyfin') { await playFilm(code, rec); return; }
+    if (rec.kind && rec.kind !== 'cd') { status('Catalogued, not playable: ' + (rec.title || code) + ' (' + rec.kind + ')', 'bad'); addHist('✗', (rec.title || code) + ' (' + rec.kind + ')', 'not playable'); return; }
+    if (!PLAYER) { status('Choose a player first.', 'bad'); return; }
+    rec.album_id = sys === 'lyrion' ? rec.play.id : null; rec.album = rec.title; rec.artist = rec.creator;
     if (rec.album_id == null) { status(code + ': ' + (rec.status === 'none' ? 'marked as not in the library.' : 'no library album yet (still rescanning?).'), 'bad'); addHist('✗', code, rec.status || 'no album'); return; }
     await rpc(PLAYER, ['power', 1]);
     await rpc(PLAYER, ['playlistcontrol', 'cmd:load', 'album_id:' + rec.album_id]);
@@ -181,7 +276,7 @@ function stopScan() {
 $('scan').onclick = startScan; $('stop').onclick = () => { stopScan(); status(''); };
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); });
 
-loadPlayers().then(() => { if (PLAYER) status('Tap "Start scanning" to begin.'); });
+Promise.all([loadPlayers(), loadFilmDevices()]).then(() => { if (PLAYER || FILMDEV) status('Tap "Start scanning" to begin.'); });
 </script>
 </body>
 </html>
