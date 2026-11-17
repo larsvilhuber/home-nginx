@@ -1,0 +1,605 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cataloguer</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --ok:#1b7f3b; --no:#b3261e; --warn:#9a6700; --acc:#2457d6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121214; --fg:#ececf1; --mut:#9a9aa6; --card:#1e1e22; --ok:#4cc26b; --no:#ff6b61; --warn:#e3b341; --acc:#7ea2ff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; }
+  main { max-width:680px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  h2 { font-size:1.05rem; margin:22px 0 6px; }
+  .sub { color:var(--mut); font-size:.85rem; margin-bottom:12px; }
+  .row { display:flex; gap:8px; margin:8px 0; align-items:center; flex-wrap:wrap; }
+  input[type=text], input[type=search], input[type=number], textarea { flex:1; min-width:0; padding:9px; font-size:1rem; border:1px solid var(--mut); border-radius:8px; background:var(--bg); color:var(--fg); font-family:inherit; width:100%; }
+  input.yr { flex:none; width:6.5em; }
+  select { padding:8px; font-size:.95rem; border-radius:8px; border:1px solid var(--mut); background:var(--bg); color:var(--fg); max-width:100%; }
+  button { padding:10px 14px; font-size:1rem; border:0; border-radius:8px; background:var(--acc); color:#fff; cursor:pointer; }
+  button.sec { background:var(--card); color:var(--fg); border:1px solid #8884; }
+  button.sm { padding:6px 10px; font-size:.85rem; }
+  button.warn { background:var(--warn); }
+  button:disabled { opacity:.45; cursor:default; }
+  .card { background:var(--card); border-radius:10px; padding:12px; margin:10px 0; }
+  .t { font-weight:600; } .m { color:var(--mut); font-size:.85rem; word-break:break-word; }
+  .bad { color:var(--no); } .good { color:var(--ok); } .hint { color:var(--warn); font-size:.85rem; }
+  #status { color:var(--mut); font-size:.9rem; min-height:1.3em; }
+  #status.bad { color:var(--no); } #status.good { color:var(--ok); }
+  .item { display:flex; gap:10px; align-items:center; padding:8px 0; border-top:1px solid #8884; }
+  .item:first-child { border-top:0; }
+  .item > div:first-child { flex:1; min-width:0; }
+  .modes { display:flex; gap:4px; margin:6px 0 2px; flex-wrap:wrap; }
+  .modes button { background:var(--card); color:var(--fg); border:1px solid #8884; }
+  .modes button[aria-selected=true] { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .res { display:flex; gap:10px; padding:8px 4px; border-top:1px solid #8884; cursor:pointer; border-radius:6px; }
+  .res:first-child { border-top:0; } .res:hover { background:#8881; }
+  .res.sel { background:color-mix(in srgb, var(--acc) 14%, var(--bg)); }
+  .res > div { min-width:0; flex:1; }
+  .cover { width:56px; height:56px; object-fit:cover; border-radius:4px; background:#8883; flex:none; }
+  .cover.film { height:80px; }
+  .src { display:inline-block; padding:1px 7px; border-radius:99px; font-size:.72rem; font-weight:600; color:#fff; vertical-align:1px; }
+  .src.musicbrainz { background:#ba478f; } .src.discogs { background:#333; } .src.tmdb { background:#01b4e4; } .src.openlibrary { background:#7a5c3a; } .src.shelf { background:#2f7d5b; } .src.manual { background:var(--mut); }
+  .lbl { font-size:.8rem; color:var(--mut); display:block; margin-top:6px; flex:1; min-width:9em; }
+  .lbl.narrow { flex:none; min-width:0; }
+  label.chk { font-size:.9rem; color:var(--mut); display:flex; gap:6px; align-items:center; margin:4px 0; }
+  video { width:100%; max-height:36vh; background:#000; border-radius:10px; display:none; object-fit:cover; margin:6px 0; }
+  .meter { height:10px; background:#8883; border-radius:99px; overflow:hidden; margin:8px 0; }
+  .meter > div { height:100%; background:var(--warn); }
+  .meter.full > div { background:var(--ok); }
+  .ready { font-weight:700; color:var(--ok); }
+  .linkbox { border:2px solid var(--ok); }
+  a { color:var(--acc); }
+  html.embed h1, html.embed .sub { display:none; }
+</style>
+<script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
+</head>
+<body>
+<main>
+  <h1>Cataloguer</h1>
+  <div class="sub">Catalogue something you own that has nothing to play (vinyl, cassettes, films on tape, …): look it up, give it a code (its own barcode, or an LV label), and it goes to Shelf with its location.</div>
+  <div id="status"></div>
+
+  <div id="after" class="card" style="display:none;border:2px solid var(--warn)">
+    <div><b id="afterq">Did the sheet print?</b> <span class="m" id="afterinfo"></span></div>
+    <div class="row"><button id="done">Yes, mark printed</button><button class="sec" id="notyet">No, keep queued</button><a id="reopen" target="_blank" class="m">open PDF again</a></div>
+  </div>
+
+  <h2>1. Start from</h2>
+  <div class="modes" role="tablist" id="modes">
+    <button data-mode="lookup" aria-selected="true">Look it up</button>
+    <button data-mode="shelf" aria-selected="false">A Shelf item</button>
+    <button data-mode="manual" aria-selected="false">By hand</button>
+  </div>
+
+  <div class="card" id="m-lookup">
+    <div class="row">
+      <select id="lkind" title="what it is">
+        <option value="vinyl">vinyl</option><option value="cassette">cassette</option><option value="cd">CD</option>
+        <option value="dvd">DVD</option><option value="bluray">Blu-ray</option><option value="vhs">VHS</option>
+        <option value="book">book</option><option value="other">other</option>
+      </select>
+      <input type="text" id="lq" placeholder="title" style="flex:2">
+    </div>
+    <div class="row"><input type="text" id="lartist" placeholder="artist / author"><input type="number" class="yr" id="lyear" placeholder="year"></div>
+    <div class="row"><input type="text" id="lcatno" placeholder="catalogue no. (e.g. SHVL 804)" autocomplete="off"></div>
+    <div class="row"><input type="text" id="lbarcode" placeholder="barcode on the sleeve / case" autocomplete="off" inputmode="numeric"><button class="sec sm" type="button" id="lscan">Scan</button></div>
+    <div class="row"><button id="lgo">Search</button><span class="m" id="lprov"></span></div>
+    <div id="lerr"></div>
+    <div id="lres"></div>
+  </div>
+
+  <div class="card" id="m-shelf" style="display:none">
+    <div class="m">Scan or type the code on the item (a Shelf CV- label or its retail barcode), or paste the Shelf page address (https://hibou:18443/item/…). The record is linked to that Shelf item; no new Shelf item is made.</div>
+    <div class="row"><input type="text" id="sin" placeholder="code or Shelf item URL" autocomplete="off" autocapitalize="characters"><button class="sec sm" type="button" id="sscan">Scan</button><button id="sgo">Find</button></div>
+    <div id="sout"></div>
+  </div>
+
+  <div class="card" id="m-manual" style="display:none">
+    <div class="m">Fill in the form below by hand.</div>
+  </div>
+
+  <h2>2. Record</h2>
+  <div class="card" id="form">
+    <div id="origin" class="m"></div>
+    <div class="row">
+      <label class="lbl narrow">Kind<br><select id="fkind">
+        <option value="vinyl">vinyl</option><option value="cassette">cassette</option><option value="cd">CD</option>
+        <option value="dvd">DVD</option><option value="bluray">Blu-ray</option><option value="vhs">VHS</option>
+        <option value="book">book</option><option value="game">game</option><option value="other">other</option>
+      </select></label>
+      <label class="lbl" style="flex:3">Title<input type="text" id="ftitle"></label>
+    </div>
+    <div class="row">
+      <label class="lbl" style="flex:3">Artist / author / director<input type="text" id="fcreator"></label>
+      <label class="lbl narrow">Year<input type="number" class="yr" id="fyear"></label>
+    </div>
+    <div class="row">
+      <label class="lbl">Label / publisher<input type="text" id="fpublisher"></label>
+      <label class="lbl">Catalogue no.<input type="text" id="fcatno"></label>
+    </div>
+    <div class="row">
+      <label class="lbl">Format<input type="text" id="fformat" placeholder='e.g. Vinyl, LP, 12"'></label>
+      <label class="lbl narrow">Country<input type="text" id="fcountry" style="width:7em"></label>
+    </div>
+    <label class="lbl">Notes<textarea id="fnotes" rows="2"></textarea></label>
+    <div class="row">
+      <label class="lbl">Shelf location<br><select id="floc"><option value="">Loading locations…</option></select></label>
+    </div>
+    <div class="hint" id="kindhint"></div>
+    <h3 style="font-size:.95rem;margin:12px 0 2px">Code</h3>
+    <div id="fcode"></div>
+    <label class="chk"><input type="checkbox" id="fpush" checked> Send to Shelf</label>
+    <div class="row"><button id="fsave">Catalogue it</button><button class="sec" id="fclear" type="button">Clear</button></div>
+    <div id="fdup"></div>
+  </div>
+  <div id="result"></div>
+
+  <h2>Print queue</h2>
+  <div class="card" id="qcard">
+    <div id="qhead"></div>
+    <div class="meter" id="meter"><div></div></div>
+    <div class="row">
+      <button id="print">Print</button>
+      <button id="lprint" class="sec" title="One label per item on the Supvan T50M Pro label printer (40 x 30 mm tape)">Print on labeller</button>
+      <select id="paper" title="paper size"><option value="letter">Letter</option><option value="a4">A4</option></select>
+    </div>
+    <div class="m" id="qhint"></div>
+    <div id="qlist"></div>
+  </div>
+
+  <h2>Recently catalogued</h2>
+  <div class="row"><button class="sec sm" id="rreload">Refresh</button><span class="m" id="rcount"></span></div>
+  <div class="card" id="recent"><div class="m">Loading…</div></div>
+  <video id="cam" playsinline muted></video>
+</main>
+
+<script>
+const API = '/cdcheck-api/', SHEET = 18, SHELF_BASE = 'https://hibou:18443';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const status = (t, cls) => { $('status').textContent = t; $('status').className = cls || ''; };
+const canon = c => { c = String(c || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase(); return c.length === 13 && /^0\d+$/.test(c) ? c.slice(1) : c; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const SRC_NAME = { musicbrainz:'MusicBrainz', discogs:'Discogs', tmdb:'TMDB', openlibrary:'Open Library', shelf:'Shelf', manual:'by hand' };
+const FILMS = ['dvd', 'bluray', 'vhs'];
+async function api(path, method = 'GET', body) {
+  const r = await fetch(API + path, { method, cache:'no-store', headers: body ? { 'Content-Type':'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, j };
+}
+async function apiOk(path, method, body) { const r = await api(path, method, body); if (!r.ok) throw new Error(r.j.error || 'HTTP ' + r.status); return r.j; }
+const shelfUrl = id => SHELF_BASE + '/item/' + encodeURIComponent(id);
+
+// ---------- camera scan into an input (same decoder as the other pages) ----------
+let stream = null, timer = null, wake = null, scanBtn = null;
+async function scanInto(input, btn, after) {
+  if (stream) { stopScan(); return; }
+  if (!window.isSecureContext) { status('Camera needs HTTPS (open https://hibou/).', 'bad'); return; }
+  let Det = window.BarcodeDetector;
+  if (!Det) {
+    try {
+      status('Loading barcode decoder…');
+      await new Promise((ok, bad) => { const s = document.createElement('script'); s.src = '/vendor/barcode-detector-3.2.3.js'; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
+      BarcodeDetectionAPI.setZXingModuleOverrides({ locateFile: (f, prefix) => f.endsWith('.wasm') ? '/vendor/zxing_reader.wasm' : prefix + f });
+      Det = BarcodeDetectionAPI.BarcodeDetector;
+    } catch (e) { status('Could not load barcode decoder. Type the code instead.', 'bad'); return; }
+  }
+  let fmts = ['ean_13', 'upc_a', 'ean_8', 'upc_e', 'code_39', 'code_128', 'itf', 'codabar'];
+  try { const sup = await Det.getSupportedFormats(); fmts = fmts.filter(f => sup.includes(f)); } catch {}
+  const det = new Det({ formats: fmts });
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }); }
+  catch (e) { status('Camera error: ' + e.message, 'bad'); return; }
+  const v = $('cam'); v.srcObject = stream; v.style.display = 'block'; await v.play();
+  v.scrollIntoView({ block: 'nearest' });
+  scanBtn = btn; if (btn) btn.textContent = 'Stop';
+  try { wake = await navigator.wakeLock?.request('screen'); } catch {}
+  status('Point the camera at the barcode…');
+  timer = setInterval(async () => {
+    try {
+      const codes = await det.detect(v);
+      if (codes.length) {
+        if (navigator.vibrate) navigator.vibrate(60);
+        input.value = String(codes[0].rawValue || '').trim(); input.dispatchEvent(new Event('input'));
+        stopScan(); status('Scanned ' + input.value + '.', 'good'); if (after) after();
+      }
+    } catch {}
+  }, 250);
+}
+function stopScan() {
+  clearInterval(timer); timer = null;
+  if (stream) stream.getTracks().forEach(t => t.stop()); stream = null;
+  try { wake?.release(); } catch {} wake = null;
+  $('cam').style.display = 'none'; if (scanBtn) scanBtn.textContent = 'Scan';
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); });
+
+// ---------- start-from modes ----------
+let MODE = 'lookup';
+function setMode(m) {
+  MODE = m;
+  document.querySelectorAll('#modes button').forEach(b => b.setAttribute('aria-selected', b.dataset.mode === m));
+  for (const k of ['lookup', 'shelf', 'manual']) $('m-' + k).style.display = k === m ? '' : 'none';
+  if (m === 'manual') { ORIGIN = { source: 'manual' }; drawOrigin(); }
+}
+$('modes').onclick = e => { const b = e.target.closest('button[data-mode]'); if (b) setMode(b.dataset.mode); };
+
+// ---------- the record being built ----------
+// ORIGIN: where the data came from: {source, source_id?, url?, ids?, cover_url?, shelf_id?, shelf_code?, shelf_url?, shelf_location?}
+let ORIGIN = { source: 'manual' }, FORMCODE = null;
+const FIELDS = ['kind', 'title', 'creator', 'year', 'publisher', 'catno', 'format', 'country', 'notes'];
+function setForm(v) {
+  for (const k of FIELDS) if (k in v) {
+    const el = $('f' + k); if (!el) continue;
+    if (k === 'kind') { el.value = [...el.options].some(o => o.value === v.kind) ? v.kind : 'other'; }
+    else el.value = v[k] ?? '';
+  }
+  kindHint();
+}
+function readForm() { const o = {}; for (const k of FIELDS) o[k] = ($('f' + k).value || '').trim(); return o; }
+function clearForm() {
+  for (const k of FIELDS) if (k !== 'kind') $('f' + k).value = '';
+  ORIGIN = { source: 'manual' }; drawOrigin(); FORMCODE = codeWidget($('fcode'), {}); $('fdup').innerHTML = '';
+}
+$('fclear').onclick = () => { clearForm(); document.querySelectorAll('.res.sel').forEach(x => x.classList.remove('sel')); };
+function drawOrigin() {
+  const o = ORIGIN;
+  let h = '';
+  if (o.shelf_id != null) {
+    h = `<div class="card linkbox" style="margin:0 0 8px"><span class="src shelf">Shelf</span> Linked to Shelf item <a target="_blank" rel="noopener" href="${esc(o.shelf_url || shelfUrl(o.shelf_id))}">#${esc(o.shelf_id)} ↗</a>
+      ${o.shelf_location ? ' · at <b>' + esc(o.shelf_location) + '</b>' : ''}<div class="m">No new Shelf item is made; the code goes on this one. Its location is not changed.</div>
+      <div class="row"><button class="sec sm" type="button" id="unlink">Unlink (make a new Shelf item instead)</button></div></div>`;
+  } else if (o.source && o.source !== 'manual') {
+    h = `<span class="src ${esc(o.source)}">${esc(SRC_NAME[o.source] || o.source)}</span> filled from ${o.url ? `<a target="_blank" rel="noopener" href="${esc(o.url)}">${esc(SRC_NAME[o.source] || o.source)} ${esc(o.source_id || '')} ↗</a>` : esc(o.source_id || '')}${o.cover_url ? ` <img src="${esc(o.cover_url)}" alt="" style="width:40px;height:40px;object-fit:cover;vertical-align:middle;border-radius:3px" onerror="this.remove()">` : ''}`;
+  }
+  $('origin').innerHTML = h;
+  const u = $('unlink'); if (u) u.onclick = () => { ORIGIN = { source: 'manual' }; drawOrigin(); FORMCODE = codeWidget($('fcode'), {}); };
+  $('floc').disabled = o.shelf_id != null;
+  kindHint();
+}
+function kindHint() {
+  const k = $('fkind').value;
+  $('kindhint').textContent = ORIGIN.shelf_id == null && ['book', 'game', 'other'].includes(k)
+    ? 'Shelf only gets new items for CDs, vinyl, cassettes and films from here. Add books and games in Shelf, then start from "A Shelf item".' : '';
+}
+$('fkind').onchange = kindHint;
+
+// ---------- code chooser: LV label / the item's barcode / a fixed code already in Shelf ----------
+function codeWidget(host, { fixed = '', suggest = '' }) {
+  if (fixed) {
+    host.innerHTML = `<div class="m">Code <b>${esc(fixed)}</b> (already on the item and known to Shelf).</div>`;
+    return () => ({ code: fixed });
+  }
+  host.innerHTML = `<label class="chk"><input type="radio" name="fcodem" value="upc" ${suggest ? 'checked' : ''}> Use the barcode on the item</label>
+    <div class="row cwrow" style="${suggest ? '' : 'display:none'}"><input type="text" autocapitalize="characters" autocomplete="off" placeholder="scan or type the barcode" value="${esc(suggest)}"><button class="sec sm" type="button">Scan</button></div>
+    <label class="chk"><input type="radio" name="fcodem" value="lv" ${suggest ? '' : 'checked'}> Make an LV label (queued for printing below; stick it on the sleeve)</label>`;
+  const row = host.querySelector('.cwrow'), inp = row.querySelector('input'), btn = row.querySelector('button');
+  host.querySelectorAll('input[type=radio]').forEach(r => r.onchange = () => {
+    const upc = host.querySelector('input[type=radio]:checked').value === 'upc';
+    row.style.display = upc ? '' : 'none'; if (upc) inp.focus();
+  });
+  btn.onclick = () => scanInto(inp, btn);
+  return () => host.querySelector('input[type=radio]:checked').value === 'upc' ? { code: canon(inp.value) } : { mint_label: true };
+}
+
+// ---------- (a) external look-up ----------
+let LRES = [];
+async function lookup() {
+  const p = new URLSearchParams();
+  const kind = $('lkind').value; p.set('kind', kind);
+  for (const [k, id] of [['q', 'lq'], ['artist', 'lartist'], ['catno', 'lcatno'], ['barcode', 'lbarcode'], ['year', 'lyear']]) {
+    const v = $(id).value.trim(); if (v) p.set(k, k === 'barcode' ? v.replace(/\s/g, '') : v);
+  }
+  if (!['q', 'artist', 'catno', 'barcode'].some(k => p.get(k))) { status('Give a title, artist, catalogue number or barcode.', 'bad'); return; }
+  if (FILMS.includes(kind) && !p.get('q')) { status('Films are found by title: type the title.', 'bad'); return; }
+  $('lres').innerHTML = '<div class="m">Searching…</div>'; $('lerr').innerHTML = ''; $('lgo').disabled = true;
+  try {
+    const r = await api('catalog/lookup?' + p.toString());
+    if (!r.ok) throw new Error(r.j.error || 'HTTP ' + r.status);
+    LRES = r.j.results || [];
+    $('lprov').textContent = 'searched ' + (r.j.providers || []).map(x => SRC_NAME[x] || x).join(' + ') + (r.j.cached ? ' (cached)' : '');
+    const errs = Object.entries(r.j.errors || {});
+    $('lerr').innerHTML = errs.map(([s, m]) => `<div class="hint">${esc(SRC_NAME[s] || s)}: ${esc(m)}</div>`).join('');
+    drawResults();
+    status(LRES.length ? LRES.length + ' result(s). Pick the one in your hands.' : 'Nothing found. Try fewer fields, or fill the form by hand.', LRES.length ? '' : 'bad');
+  } catch (e) { $('lres').innerHTML = `<div class="bad">${esc(e.message)}</div>`; }
+  finally { $('lgo').disabled = false; }
+}
+function drawResults() {
+  $('lres').innerHTML = LRES.length ? LRES.map((r, i) => {
+    const img = r.thumb_url || r.cover_url;
+    const film = FILMS.includes(r.kind) && r.source === 'tmdb';
+    const lab = [r.label, r.catno].filter(Boolean).join(' · ');
+    const fmt = [r.format, r.country].filter(Boolean).join(' · ');
+    return `<div class="res" data-i="${i}">${img ? `<img class="cover${film ? ' film' : ''}" loading="lazy" src="${esc(img)}" alt="" onerror="this.style.visibility='hidden'">` : `<div class="cover${film ? ' film' : ''}"></div>`}
+      <div><div class="t">${esc(r.title)}${r.year ? ' (' + esc(r.year) + ')' : ''}</div>
+      ${r.creator ? `<div>${esc(r.creator)}</div>` : ''}
+      ${lab ? `<div class="m">${esc(lab)}</div>` : ''}
+      <div class="m"><span class="src ${esc(r.source)}">${esc(SRC_NAME[r.source] || r.source)}</span> ${esc(fmt)}${r.barcode ? ' · ' + esc(r.barcode) : ''}
+        ${r.url ? ` · <a target="_blank" rel="noopener" href="${esc(r.url)}" data-ext="1">page ↗</a>` : ''}</div></div></div>`;
+  }).join('') : '';
+}
+$('lres').onclick = e => {
+  if (e.target.dataset.ext) return;
+  const el = e.target.closest('.res'); if (!el) return;
+  $('lres').querySelectorAll('.res').forEach(x => x.classList.toggle('sel', x === el));
+  pickResult(LRES[+el.dataset.i]);
+};
+function pickResult(r) {
+  const kind = r.source === 'tmdb' ? $('lkind').value : (r.kind !== 'other' ? r.kind : $('lkind').value);
+  setForm({ kind, title: r.title, creator: r.creator || '', year: r.year || '', publisher: r.label || '', catno: r.catno || '',
+            format: r.format || '', country: r.country || '' });
+  ORIGIN = { source: r.source, source_id: r.source_id, url: r.url, ids: { ...(r.ids || {}) }, cover_url: r.cover_url || '' };
+  drawOrigin();
+  const scanned = canon($('lbarcode').value);             // a barcode typed/scanned for the search is the item's own
+  FORMCODE = codeWidget($('fcode'), { suggest: scanned || '' });
+  if (!scanned && r.barcode) $('fcode').insertAdjacentHTML('beforeend', `<div class="m">This release's barcode is ${esc(r.barcode)}; if your copy carries it, choose "Use the barcode on the item" and scan it.</div>`);
+  $('fdup').innerHTML = '';
+  status('Filled from ' + (SRC_NAME[r.source] || r.source) + '. Check the form, choose the code and location, then Catalogue it.', 'good');
+  $('form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+$('lgo').onclick = lookup;
+['lq', 'lartist', 'lcatno', 'lbarcode', 'lyear'].forEach(id => $(id).onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); lookup(); } });
+$('lscan').onclick = () => scanInto($('lbarcode'), $('lscan'), lookup);
+$('lkind').onchange = () => { $('fkind').value = $('lkind').value; kindHint(); };
+
+// ---------- (b) an existing Shelf item ----------
+function shelfIdFromUrl(s) { const m = String(s).match(/\/(?:music\/)?item\/(\d+)/); return m ? m[1] : null; }
+async function fromShelf() {
+  const raw = $('sin').value.trim(); if (!raw) return;
+  $('sout').innerHTML = '<div class="m">Looking…</div>';
+  try {
+    let it = null, code = '';
+    const sid = /^https?:|\/item\//.test(raw) ? shelfIdFromUrl(raw) : null;
+    if (/^https?:|\/item\//.test(raw) && !sid) throw new Error('That is not a Shelf item address (…/item/<number>).');
+    if (sid) {
+      const r = await api('shelf/item?id=' + sid);
+      if (r.status === 404) throw new Error('Shelf has no item ' + sid + '.');
+      if (!r.ok) throw new Error('Shelf: ' + (r.j.error || 'HTTP ' + r.status));
+      it = r.j;
+    } else {
+      code = canon(raw);
+      const r = await api('items/' + encodeURIComponent(code));
+      if (r.ok && r.j.status !== 'shelf') { showAlready(r.j); return; }
+      if (r.ok) it = { ...r.j, url: r.j.url, code: r.j.code, shelf_code: r.j.shelf_code };   // a Shelf copy code
+      else {
+        const s = await api('shelf/item?code=' + encodeURIComponent(code));
+        if (s.status === 404) {
+          $('sout').innerHTML = `<div class="hint">${esc(code)} is not in cdcheck nor in Shelf.</div>
+            <div class="row"><button class="sec sm" id="tolookup" type="button">Look it up by this barcode</button></div>`;
+          $('tolookup').onclick = () => { $('lbarcode').value = code; setMode('lookup'); lookup(); };
+          return;
+        }
+        if (!s.ok) throw new Error('Shelf: ' + (s.j.error || 'HTTP ' + s.status));
+        it = s.j;
+      }
+    }
+    // already catalogued under another code?
+    const linked = await api('items?shelf_id=' + encodeURIComponent(it.shelf_id));
+    if (linked.ok && (linked.j || []).length) { showAlready(linked.j[0], it); return; }
+    const kind = it.kind === 'cd' || it.kind === 'vinyl' || it.kind === 'cassette' || it.kind === 'book' || it.kind === 'game' ? it.kind
+      : it.kind === 'dvd' ? 'dvd' : 'other';
+    setForm({ kind, title: it.title || '', creator: it.creator || '', year: it.year || '', publisher: '', catno: '', format: '', country: '' });
+    ORIGIN = { source: 'shelf', shelf_id: it.shelf_id, shelf_url: it.url, shelf_location: it.location };
+    drawOrigin();
+    FORMCODE = codeWidget($('fcode'), code ? { fixed: code } : {});
+    $('sout').innerHTML = `<div class="good">Found Shelf item #${esc(it.shelf_id)}: <b>${esc(it.title)}</b>${it.creator ? ' — ' + esc(it.creator) : ''}${it.location ? ' · ' + esc(it.location) : ''}</div>
+      ${code ? '' : '<div class="m">This item has no code in cdcheck yet: scan its barcode below, or make an LV label.</div>'}`;
+    status('Linked to Shelf item #' + it.shelf_id + '. Check the form, then Catalogue it.', 'good');
+    $('form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) { $('sout').innerHTML = `<div class="bad">${esc(e.message)}</div>`; }
+}
+function showAlready(rec, it) {
+  const sid = rec.shelf_id;
+  $('sout').innerHTML = `<div class="card linkbox" style="margin:6px 0 0"><b>Already catalogued</b> as <b>${esc(rec.code)}</b>: ${esc(rec.title)}${rec.creator ? ' — ' + esc(rec.creator) : ''}
+    <span class="m">(${esc(rec.kind)}, ${esc(rec.status)})</span>
+    ${sid != null ? `<div>Shelf item <a target="_blank" rel="noopener" href="${esc((it && it.url) || shelfUrl(sid))}">#${esc(sid)} ↗</a>${it && it.location ? ' · ' + esc(it.location) : ''}</div>` : '<div class="m">Not in Shelf yet.</div>'}
+    <div class="m">Nothing to do here. To change it, edit it in Shelf${rec.kind === 'cd' ? ' or CD Check' : ''}.</div></div>`;
+  status(rec.code + ' is already catalogued.', 'good');
+  if (sid != null && !(it && it.location)) api('shelf/item?code=' + encodeURIComponent(rec.code)).then(r => {
+    const a = $('sout').querySelector('a'); if (r.ok && r.j.location && a) a.insertAdjacentText('afterend', ' · ' + r.j.location);
+  }).catch(() => {});
+}
+$('sgo').onclick = fromShelf;
+$('sin').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); fromShelf(); } };
+$('sscan').onclick = () => scanInto($('sin'), $('sscan'), fromShelf);
+
+// ---------- Shelf locations ----------
+let DEFAULT_LOC = 'Magog / Sous-sol';
+async function loadLocations() {
+  let saved = ''; try { saved = localStorage.getItem('catalog.location') || ''; } catch {}
+  try {
+    const j = await apiOk('shelf/locations');
+    DEFAULT_LOC = j.default || DEFAULT_LOC;
+    const locs = j.locations || [];
+    $('floc').innerHTML = locs.map(l => `<option value="${esc(l.name)}">${esc(l.name)}</option>`).join('');
+    const want = locs.some(l => l.name === saved) ? saved : DEFAULT_LOC;
+    $('floc').value = want;
+  } catch (e) {
+    $('floc').innerHTML = `<option value="">(Shelf default: ${esc(DEFAULT_LOC)})</option>`;
+    status('Shelf locations: ' + e.message, 'bad');
+  }
+}
+$('floc').onchange = () => { try { localStorage.setItem('catalog.location', $('floc').value); } catch {} };
+
+// ---------- save ----------
+let ALLOW_DUP = false;
+function buildBody() {
+  const f = readForm();
+  if (!f.title) throw new Error('Give it a title.');
+  const code = FORMCODE();
+  if ('code' in code && !code.code) throw new Error('Scan or type the barcode, or choose an LV label.');
+  if ('code' in code && !/^[A-Z0-9]{3,30}$/.test(code.code)) throw new Error('That barcode does not look right: ' + code.code);
+  const b = { kind: f.kind, title: f.title, ...code, source: ORIGIN.source || 'manual' };
+  if (f.creator) b.creator = f.creator;
+  if (f.year) { const y = +f.year; if (!(y >= 1000 && y <= 2999)) throw new Error('Year must be four digits.'); b.year = y; }
+  for (const k of ['publisher', 'catno', 'format', 'country', 'notes']) if (f[k]) b[k] = f[k];
+  const ids = { ...(ORIGIN.ids || {}) };
+  if (Object.keys(ids).length) b.ids = ids;
+  if (ORIGIN.cover_url && /^https:\/\//.test(ORIGIN.cover_url)) b.cover_url = ORIGIN.cover_url;
+  if (ORIGIN.shelf_id != null) b.shelf_id = +ORIGIN.shelf_id;
+  else if ($('floc').value) b.location = $('floc').value;
+  if (!$('fpush').checked) b.shelf_push = false;
+  if (ALLOW_DUP) b.allow_duplicate = true;
+  return b;
+}
+async function save() {
+  let body; try { body = buildBody(); } catch (e) { status(e.message, 'bad'); return; }
+  $('fsave').disabled = true; $('fdup').innerHTML = '';
+  try {
+    const r = await api('items', 'POST', body);
+    if (r.status === 409 && r.j.code) {
+      const inUse = /in use/.test(r.j.error || '');
+      $('fdup').innerHTML = `<div class="card" style="border:2px solid var(--warn)"><b>${inUse ? 'That code is already in use' : 'Already catalogued'}</b>: ${esc(r.j.error)}
+        <div class="row"><button class="sec sm" type="button" id="seeit">Show ${esc(r.j.code)}</button>
+        ${inUse ? '' : '<button class="warn sm" type="button" id="dupok">It is a second copy: catalogue anyway</button>'}</div></div>`;
+      $('seeit').onclick = async () => { const x = await api('items/' + encodeURIComponent(r.j.code)); if (x.ok) showResult(x.j, true); };
+      const d = $('dupok'); if (d) d.onclick = () => { ALLOW_DUP = true; save(); };
+      status('Needs your attention below the form.', 'bad'); return;
+    }
+    if (!r.ok) throw new Error(r.j.error || 'HTTP ' + r.status);
+    ALLOW_DUP = false;
+    showResult(r.j);
+    status('Catalogued as ' + r.j.code + '.', 'good');
+    clearForm(); LRES = []; $('lres').innerHTML = ''; $('sout').innerHTML = ''; $('sin').value = '';
+    ['lq', 'lartist', 'lcatno', 'lbarcode', 'lyear'].forEach(i => $(i).value = '');
+    await Promise.all([refresh().catch(() => {}), loadRecent()]);
+  } catch (e) { status('Error: ' + e.message, 'bad'); }
+  finally { $('fsave').disabled = false; ALLOW_DUP = false; }
+}
+$('fsave').onclick = save;
+
+// ---------- result + Shelf push state ----------
+let pollToken = 0;
+function shelfState(rec, pushMode) {
+  if (rec.shelf_id != null && pushMode !== 'linking')
+    return `<span class="good">In Shelf:</span> <a target="_blank" rel="noopener" href="${esc(shelfUrl(rec.shelf_id))}">item #${esc(rec.shelf_id)} ↗</a><span class="m" data-loc></span>`;
+  if (rec.shelf_error) return `<span class="bad">Shelf: ${esc(rec.shelf_error)}</span>`;
+  if (pushMode === 'off') return '<span class="m">Not sent to Shelf.</span>';
+  if (pushMode === 'linking') return '<span class="m">Putting the code on Shelf item #' + esc(rec.shelf_id) + '… (about 30 s)</span>';
+  return '<span class="m">Waiting for Shelf… (sent about 30 s after saving)</span>';
+}
+function showResult(rec, existing) {
+  const pushMode = existing ? '' : rec.shelf_push;
+  $('result').innerHTML = `<div class="card" style="border:2px solid var(--ok)">
+    <div><b class="good">${existing ? 'Existing record' : 'Catalogued'}</b> as <b style="font-size:1.15rem">${esc(rec.code)}</b></div>
+    <div>${esc(rec.title)}${rec.creator ? ' — ' + esc(rec.creator) : ''} <span class="m">(${esc(rec.kind)}${rec.year ? ', ' + esc(rec.year) : ''})</span></div>
+    ${rec.queued ? '<div>An LV label was queued: print it below and stick it on the sleeve.</div>' : ''}
+    <div id="shst">${shelfState(rec, pushMode)}</div></div>`;
+  $('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if (!existing && pushMode !== 'off') pollShelf(rec.code, pushMode, ++pollToken);
+  else if (rec.shelf_id != null) showLoc(rec.code);
+}
+async function pollShelf(code, mode, tok) {
+  for (let i = 0; i < 18; i++) {                        // ~ 90 s: the push waits 30 s, a MusicBrainz add takes a few more
+    await sleep(i === 0 ? 8000 : 5000);
+    if (tok !== pollToken) return;
+    const r = await api('items/' + encodeURIComponent(code));
+    if (!r.ok) continue;
+    const rec = r.j;
+    let done = rec.shelf_error || (rec.shelf_id != null && mode !== 'linking');
+    if (mode === 'linking') {                            // linked from the start: done once Shelf says the code is there
+      const s = await api('shelf/status');
+      const q = (s.j && s.j.queue) || [];
+      const mine = q.find(e => e.code === code);
+      if (!mine) done = true;
+      else if (mine.state === 'blocked' || mine.last_error) { rec.shelf_error = mine.last_error || 'blocked'; done = true; }
+    }
+    if (done) { $('shst').innerHTML = shelfState(rec, rec.shelf_error ? mode : ''); if (!rec.shelf_error) showLoc(code); loadRecent(); return; }
+  }
+  if (tok === pollToken) $('shst').innerHTML += ' <span class="m">(still waiting; see Recently catalogued later)</span>';
+}
+async function showLoc(code) {
+  const r = await api('shelf/item?code=' + encodeURIComponent(code));
+  const el = document.querySelector('#shst [data-loc]');
+  if (r.ok && el) el.textContent = r.j.location ? ' · ' + r.j.location : '';
+}
+
+// ---------- recently catalogued ----------
+async function loadRecent() {
+  try {
+    const all = await apiOk('items?status=catalog');
+    const rs = all.sort((a, b) => String(b.saved).localeCompare(String(a.saved))).slice(0, 25);
+    $('rcount').textContent = all.length + ' catalogued item(s)';
+    $('recent').innerHTML = rs.length ? rs.map(x => `<div class="item"><div><div class="t">${esc(x.title)}</div>
+      <div class="m">${esc(x.creator || '')}${x.creator ? ' · ' : ''}${esc(x.kind)}${x.year ? ' · ' + esc(x.year) : ''}${x.catno ? ' · ' + esc(x.catno) : ''} · <b>${esc(x.code)}</b>${x.label ? ' (LV label)' : ''}</div></div>
+      <div>${x.shelf_id != null ? `<a target="_blank" rel="noopener" href="${esc(shelfUrl(x.shelf_id))}">Shelf #${esc(x.shelf_id)} ↗</a>`
+        : x.shelf_error ? `<span class="bad m" title="${esc(x.shelf_error)}">Shelf error</span>` : '<span class="m">not in Shelf</span>'}</div></div>`).join('')
+      : '<div class="m">Nothing catalogued yet.</div>';
+  } catch (e) { $('recent').innerHTML = `<div class="bad">${esc(e.message)}</div>`; }
+}
+$('rreload').onclick = loadRecent;
+
+// ---------- label queue + printing (same endpoints as CD Tag / DVD Tag) ----------
+let LAB = { queue:[], printed:{}, next:1 }, PRINTING = [];
+async function refresh() { LAB = await apiOk('labels'); drawQueue(); drawPending(); }
+function drawPending() {
+  const p = LAB.pending;
+  $('after').style.display = p ? 'block' : 'none';
+  if (p) {
+    PRINTING = p.codes;
+    $('afterq').textContent = p.via === 'labeller' ? 'Did the labels come out of the label printer?' : 'Did the sheet print?';
+    $('afterinfo').textContent = p.codes.length + ' label' + (p.codes.length > 1 ? 's' : '') + ' (' + p.codes[0] + (p.codes.length > 1 ? '…' + p.codes[p.codes.length - 1] : '') + ')';
+    $('reopen').style.display = p.url ? '' : 'none';
+    if (p.url) $('reopen').href = API + p.url;
+  }
+}
+function drawQueue() {
+  const n = LAB.queue.length, ready = n >= SHEET;
+  $('qhead').innerHTML = n === 0 ? 'Nothing waiting.' : ready ? `<span class="ready">Sheet ready: ${n} labels waiting</span> (${SHEET} fit on a sheet)` : `${n} of ${SHEET} labels for a full sheet`;
+  $('meter').className = 'meter' + (ready ? ' full' : ''); $('meter').firstElementChild.style.width = Math.min(100, n / SHEET * 100) + '%';
+  $('print').disabled = n === 0; $('print').className = ready ? '' : 'sec';
+  $('print').textContent = ready ? `Print sheet (${SHEET})` : `Print anyway (${n})`;
+  $('lprint').disabled = n === 0 || !!LAB.pending;
+  $('lprint').textContent = n > 1 ? `Print on labeller (${n})` : 'Print on labeller';
+  $('qhint').textContent = n ? 'Sheets are saved as PDFs on the server, so you can print again if something goes wrong.' : '';
+  $('qlist').innerHTML = LAB.queue.map(q => `<div class="item"><div><div class="t">${esc(q.album || q.title || q.code)}</div><div class="m">${esc(q.artist || q.creator || '')} · <b>${esc(q.code)}</b></div></div>
+    <button class="sm" data-lp="${esc(q.code)}"${LAB.pending ? ' disabled' : ''}>Label</button><button class="sm sec" data-rm="${esc(q.code)}">Remove</button></div>`).join('');
+}
+async function labeller(codes) {
+  const btns = [$('lprint'), ...document.querySelectorAll('[data-lp]')]; btns.forEach(b => b.disabled = true);
+  status(codes ? 'Printing ' + codes[0] + '…' : 'Printing ' + LAB.queue.length + ' label(s)… (a few seconds each)');
+  try {
+    const r = await fetch(API + 'labels/labeller', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(codes ? { codes } : {}) });
+    const j = await r.json().catch(() => ({}));
+    await refresh();
+    if (j.error) throw new Error(j.error);
+    const n = (j.sent || []).length;
+    if (j.failed && j.failed.length) status(`Sent ${n}, then stopped: ${j.failed[0].code}: ${j.failed[0].error}. The rest stay queued.`, 'bad');
+    else status(`Sent ${n} label(s) to the label printer. Please confirm above that they came out.`);
+    if (n) $('after').scrollIntoView({ block:'nearest', behavior:'smooth' });
+  } catch (e) { status('Error: ' + e.message, 'bad'); drawQueue(); }
+}
+$('lprint').onclick = () => labeller(null);
+$('qlist').addEventListener('click', async e => {
+  if (e.target.dataset.lp) return labeller([e.target.dataset.lp]);
+  const c = e.target.dataset.rm; if (!c) return;
+  if (!confirm('Take ' + c + ' out of the print queue? If it was never printed, its record is dropped too (unless it is already in Shelf).')) return;
+  try { await apiOk('labels/' + c, 'DELETE'); await refresh(); loadRecent(); } catch (err) { status('Error: ' + err.message, 'bad'); }
+});
+let paper = 'letter'; try { paper = localStorage.getItem('cdtag-paper') || 'letter'; } catch {}
+$('paper').value = paper;
+$('paper').onchange = () => { paper = $('paper').value; try { localStorage.setItem('cdtag-paper', paper); } catch {} };
+$('print').onclick = async () => {
+  const w = window.open('', '_blank');
+  try {
+    const r = await apiOk('labels/sheet', 'POST', { paper });
+    PRINTING = r.codes; if (w) w.location = API + r.url; else location.href = API + r.url;
+    await refresh(); status('Sheet saved as ' + r.file + '. Print it from the PDF window.');
+  } catch (e) { if (w) w.close(); status('Error: ' + e.message, 'bad'); }
+};
+$('done').onclick = async () => { try { await apiOk('labels/printed', 'POST', { codes: PRINTING }); PRINTING = []; await refresh(); status('Marked as printed.'); } catch (e) { status('Error: ' + e.message, 'bad'); } };
+$('notyet').onclick = async () => { try { await apiOk('labels/dismiss', 'POST', {}); PRINTING = []; await refresh(); } catch (e) { status('Error: ' + e.message, 'bad'); } };
+
+// ---------- start ----------
+FORMCODE = codeWidget($('fcode'), {});
+$('fkind').value = $('lkind').value;
+const qs = new URLSearchParams(location.search);
+if (qs.get('code') || qs.get('shelf')) { $('sin').value = qs.get('code') || qs.get('shelf'); setMode('shelf'); fromShelf(); }
+loadLocations(); loadRecent(); refresh().catch(e => status('Label queue: ' + e.message, 'bad'));
+</script>
+</body>
+</html>

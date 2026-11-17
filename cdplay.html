@@ -55,6 +55,7 @@
     <button id="stop" class="sec" style="display:none">Stop</button>
   </div>
   <div id="status"></div>
+  <div id="shelfline" class="m"></div>
 
   <div id="nowcard" class="card" style="display:none">
     <div class="now"><div><div class="t" id="nt"></div><div class="m" id="na"></div><div class="m" id="nc"></div></div></div>
@@ -203,12 +204,14 @@ async function playCode(raw) {
   if (busy || (code === lastCode && Date.now() - lastAt < 6000)) return;      // same CD still in view
   busy = true; lastCode = code; lastAt = Date.now();
   try {
-    status('Looking up ' + code + '…');
+    status('Looking up ' + code + '…'); $('shelfline').textContent = '';
     const r = await fetch(API + 'items/' + code, { cache:'no-store' });
     if (r.status === 404) { status(code + ': not paired with an album yet. Pair it in CD Check.', 'bad'); addHist('✗', code, 'not paired'); return; }
     if (!r.ok) throw new Error('save service HTTP ' + r.status);
     const rec = await r.json();
+    shelfLine(code, rec);                                // where it lives (Shelf); in the background, never delays playback
     const sys = rec.play && rec.play.system;
+    if (rec.status === 'shelf') { status('In Shelf, not playable: ' + (rec.title || code) + (rec.kind ? ' (' + rec.kind + ')' : ''), 'bad'); addHist('✗', rec.title || code, 'Shelf only'); return; }
     if (sys === 'jellyfin') { await playFilm(code, rec); return; }
     if (rec.kind && rec.kind !== 'cd') { status('Catalogued, not playable: ' + (rec.title || code) + ' (' + rec.kind + ')', 'bad'); addHist('✗', (rec.title || code) + ' (' + rec.kind + ')', 'not playable'); return; }
     if (!PLAYER) { status('Choose a player first.', 'bad'); return; }
@@ -221,6 +224,21 @@ async function playCode(raw) {
     showNow(rec);
   } catch (e) { status('Error: ' + e.message, 'bad'); lastAt = 0; }
   finally { busy = false; }
+}
+// ---------- "Shelf: <location> · item" line under the status ----------
+let shelfSeq = 0;
+function shelfLine(code, rec) {
+  const el = $('shelfline'), seq = ++shelfSeq;
+  const draw = (loc, url) => {
+    if (seq !== shelfSeq) return;                        // a newer scan took over
+    el.innerHTML = 'Shelf: ' + (loc ? esc(loc) : 'no location') + (url ? ` · <a href="${esc(url)}" target="_blank" rel="noopener">item ↗</a>` : '');
+  };
+  if (rec.status === 'shelf' && rec.url) { draw(rec.location, rec.url); return; }   // answer came from Shelf already
+  if (rec.shelf_id == null) return;
+  fetch(API + 'shelf/item?code=' + encodeURIComponent(code), { cache:'no-store' })
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(j => draw(j.location, j.url))
+    .catch(() => { if (seq === shelfSeq) el.textContent = 'Shelf: location unavailable'; });
 }
 function showNow(rec) {
   $('nowcard').style.display = '';
