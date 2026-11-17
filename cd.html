@@ -80,6 +80,7 @@ const VIEWS = [
   { id:'check',   label:'Check',      icon:'fa-barcode',         src:'check.html',   desc:'Is it in the library?', tabbed:true },
   { id:'tag',     label:'Tag',        icon:'fa-tag',             src:'tag.html',     desc:'Codes, DVD import, labels', tabbed:true },
   { id:'catalog', label:'Cataloguer', icon:'fa-book-open',       src:'catalog.html', desc:'Add anything to Shelf' },
+  { id:'labels',  label:'Shelf labels', icon:'fa-print',         src:'shelflabels.html', desc:'Print Shelf labels on the labeller' },
   { id:'review',  label:'Review',     icon:'fa-clipboard-check', src:'review.html',  desc:'Check MusicBrainz tags' },
 ];
 const EXT = [
@@ -91,7 +92,7 @@ const LEGACY = {
   cdplay:['play'], dvdplay:['play'],
   cdcheck:['check', 'cd'], dvdcheck:['check', 'dvd'],
   cdtag:['tag', 'cd'], dvdtag:['tag', 'dvd'],
-  catalogue:['catalog'], cataloguer:['catalog'], menu:[''], home:[''],
+  catalogue:['catalog'], cataloguer:['catalog'], shelflabels:['labels'], menu:[''], home:[''],
 };
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));

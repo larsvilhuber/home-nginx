@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shelf labels</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --ok:#1b7f3b; --no:#b3261e; --warn:#9a6700; --acc:#2457d6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121214; --fg:#ececf1; --mut:#9a9aa6; --card:#1e1e22; --ok:#4cc26b; --no:#ff6b61; --warn:#e3b341; --acc:#7ea2ff; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 system-ui,sans-serif; }
+  main { max-width:680px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  h2 { font-size:1.05rem; margin:22px 0 6px; }
+  .sub { color:var(--mut); font-size:.85rem; margin-bottom:12px; }
+  .row { display:flex; gap:8px; margin:8px 0; align-items:center; flex-wrap:wrap; }
+  input[type=text], input[type=url], input[type=number], textarea { flex:1; min-width:0; padding:9px; font-size:1rem; border:1px solid var(--mut); border-radius:8px; background:var(--bg); color:var(--fg); font-family:inherit; width:100%; }
+  input.code { flex:1; min-width:8em; }
+  button { padding:10px 14px; font-size:1rem; border:0; border-radius:8px; background:var(--acc); color:#fff; cursor:pointer; }
+  button.sec { background:var(--card); color:var(--fg); border:1px solid #8884; }
+  button.sm { padding:6px 10px; font-size:.85rem; }
+  button:disabled { opacity:.45; cursor:default; }
+  .card { background:var(--card); border-radius:10px; padding:12px; margin:10px 0; }
+  .t { font-weight:600; word-break:break-word; } .m { color:var(--mut); font-size:.85rem; word-break:break-word; }
+  .bad { color:var(--no); } .good { color:var(--ok); } .hint { color:var(--warn); font-size:.85rem; }
+  #status { color:var(--mut); font-size:.9rem; min-height:1.3em; }
+  #status.bad { color:var(--no); } #status.good { color:var(--ok); }
+  .modes { display:flex; gap:4px; margin:6px 0 2px; flex-wrap:wrap; }
+  .modes button { background:var(--card); color:var(--fg); border:1px solid #8884; padding:8px 12px; font-size:.95rem; }
+  .modes button[aria-selected=true] { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .lab { display:flex; gap:10px; align-items:center; padding:8px 0; border-top:1px solid #8884; }
+  .lab:first-child { border-top:0; }
+  .lab input[type=checkbox] { width:22px; height:22px; flex:none; margin:0; }
+  .lab > label { display:flex; gap:10px; align-items:center; flex:1; min-width:0; cursor:pointer; }
+  .lab > label > div { min-width:0; flex:1; }
+  .lab img { width:96px; height:72px; flex:none; border:1px solid #8886; border-radius:4px; background:#fff; image-rendering:pixelated; }
+  .res { font-size:.82rem; font-weight:600; }
+  .res.ok { color:var(--ok); } .res.err { color:var(--no); } .res.skip { color:var(--mut); }
+  .bm { display:inline-block; padding:8px 14px; border-radius:8px; background:var(--acc); color:#fff; text-decoration:none; font-weight:600; cursor:grab; }
+  code.blk { display:block; padding:8px; border-radius:6px; background:var(--bg); border:1px solid #8884; font-size:.8rem; word-break:break-all; user-select:all; }
+  ol { padding-left:1.3em; margin:6px 0; } li { margin:3px 0; }
+  a { color:var(--acc); }
+  html.embed h1, html.embed .sub, html.embed .back { display:none; }
+</style>
+<script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
+</head>
+<body>
+<main>
+  <div class="back m"><a href="cd.html">← Media tools</a></div>
+  <h1>Shelf labels</h1>
+  <div class="sub">Print Shelf's own copy labels (codes like CV-000012, with the title) one at a time on the label printer (Supvan, 40 × 30 mm), instead of on an Avery sheet. Shelf is only read.</div>
+  <div id="status" role="status"></div>
+
+  <div id="after" class="card" style="display:none;border:2px solid var(--warn)">
+    <div><b>Did the labels come out of the label printer?</b> <span class="m" id="afterinfo"></span></div>
+    <div class="row"><button id="yes">Yes, all good</button><button class="sec" id="no">No, print some again</button></div>
+  </div>
+
+  <h2>1. Which labels</h2>
+  <div class="modes" role="tablist" id="modes">
+    <button data-mode="sheet" aria-selected="true">Shelf sheet URL</button>
+    <button data-mode="item" aria-selected="false">Item number</button>
+    <button data-mode="range" aria-selected="false">Code range</button>
+    <button data-mode="codes" aria-selected="false">Codes</button>
+  </div>
+  <form id="pick" class="card" autocomplete="off">
+    <div data-m="sheet">
+      <div class="m">In Shelf: Labels → pick the labels → the sheet page opens. Paste that page's address here (or use the bookmark below).</div>
+      <div class="row"><input type="url" id="sheet" placeholder="https://hibou:18443/labels/sheet?item_id=…" inputmode="url"></div>
+    </div>
+    <div data-m="item" hidden>
+      <div class="m">Every copy of one Shelf item that has a code. The number is in the item's address: …/items/<b>786</b>.</div>
+      <div class="row"><input type="number" id="item" min="1" placeholder="Shelf item number, e.g. 786"></div>
+    </div>
+    <div data-m="range" hidden>
+      <div class="m">Shelf's generated codes, by number (hand-typed codes such as LV… are not in a range: use "Codes").</div>
+      <div class="row"><input type="text" class="code" id="from" placeholder="from CV-000001" autocapitalize="characters"><input type="text" class="code" id="to" placeholder="to CV-000030" autocapitalize="characters"></div>
+    </div>
+    <div data-m="codes" hidden>
+      <div class="m">Any copy codes Shelf knows (CV-…, LV…, …), separated by spaces, commas or new lines.</div>
+      <div class="row"><textarea id="codes" rows="3" placeholder="CV-000012 CV-000015 LV00101" autocapitalize="characters"></textarea></div>
+    </div>
+    <div class="row"><button id="load" type="submit">Show labels</button></div>
+  </form>
+
+  <section id="out" hidden>
+    <h2>2. Print</h2>
+    <div class="m" id="srcinfo"></div>
+    <div id="notes"></div>
+    <div class="row">
+      <button class="sec sm" id="all" type="button">Tick all</button><button class="sec sm" id="none" type="button">Tick none</button>
+      <span class="m" id="count"></span>
+    </div>
+    <div class="card" id="list"></div>
+    <div class="row"><button id="print" type="button">Print on labeller</button></div>
+    <div class="m">One label at a time, a few seconds each. If one fails, the rest are not sent.</div>
+  </section>
+
+  <h2>Bookmark for Shelf's sheet pages</h2>
+  <div class="card">
+    <div class="m"><b>Computer:</b> drag this button to the bookmarks bar.</div>
+    <div class="row"><a class="bm" id="bm" href="#" title="Drag me to the bookmarks bar">Print on labeller</a></div>
+    <ol class="m">
+      <li>In Shelf, open Labels and choose labels as usual (one item, a code range, a location…). The label sheet opens.</li>
+      <li>On that sheet page, click the <b>Print on labeller</b> bookmark: this page opens with those labels.</li>
+      <li>Untick any you do not want, then <b>Print on labeller</b>.</li>
+    </ol>
+    <div class="m"><b>Phone / tablet</b> (bookmarklets are awkward there): on Shelf's sheet page, copy the address from the address bar and paste it in "Shelf sheet URL" above. Or make a bookmark by hand and replace its address with:</div>
+    <code class="blk" id="bmtext"></code>
+    <div class="row"><button class="sec sm" id="copybm" type="button">Copy bookmark address</button></div>
+  </div>
+</main>
+<script>
+const API = '/cdcheck-api/', MAX_PRINT = 60;
+const BOOKMARKLET = "javascript:location.href='https://hibou/shelflabels.html?sheet='+encodeURIComponent(location.href)";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+const status = (t, cls) => { $('status').textContent = t; $('status').className = cls || ''; };
+let MODE = 'sheet', SEL = null, LABS = [], RES = {}, PENDING = null, BUSY = false;
+
+async function api(path, body) {
+  const r = await fetch(API + path, { method:'POST', cache:'no-store', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  return { ok: r.ok, status: r.status, j };
+}
+
+// ---------- selector ----------
+function setMode(m) {
+  MODE = m;
+  document.querySelectorAll('#modes button').forEach(b => b.setAttribute('aria-selected', b.dataset.mode === m));
+  document.querySelectorAll('[data-m]').forEach(d => { d.hidden = d.dataset.m !== m; });
+}
+document.querySelectorAll('#modes button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+const splitCodes = s => String(s || '').split(/[\s,;]+/).map(x => x.trim()).filter(Boolean);
+function selector() {
+  if (MODE === 'sheet') { const u = $('sheet').value.trim(); return u ? { sheet_url: u } : null; }
+  if (MODE === 'item') { const n = parseInt($('item').value, 10); return n > 0 ? { item_id: n } : null; }
+  if (MODE === 'range') { const a = $('from').value.trim(), b = $('to').value.trim(); return a ? { from: a, to: b || a } : null; }
+  const c = splitCodes($('codes').value); return c.length ? { codes: c } : null;
+}
+
+async function load(e) {
+  if (e) e.preventDefault();
+  const sel = selector();
+  if (!sel) { status('Fill in the ' + { sheet:'sheet URL', item:'item number', range:'first code', codes:'codes' }[MODE] + ' first.', 'bad'); return; }
+  $('load').disabled = true; status('Reading the labels from Shelf…');
+  try {
+    const { ok, j } = await api('labels/shelf', { ...sel, dry_run: true });
+    if (!ok) throw new Error(j.error || 'failed');
+    SEL = sel; LABS = j.labels || []; RES = {};
+    draw(j);
+    status(LABS.length ? `${LABS.length} label${LABS.length > 1 ? 's' : ''} found.` : 'Shelf has no labels for that selection (only copies with a code are listed).', LABS.length ? '' : 'bad');
+  } catch (err) { status('Error: ' + err.message, 'bad'); }
+  finally { $('load').disabled = false; }
+}
+$('pick').addEventListener('submit', load);
+
+// ---------- list ----------
+const preview = l => API + 'labels/shelf/preview?code=' + encodeURIComponent(l.code) + '&text=' + encodeURIComponent(l.text || '');
+function draw(j) {
+  $('out').hidden = false;
+  if (j) {
+    $('srcinfo').textContent = 'From Shelf: ' + (j.source || '');
+    const notes = [];
+    if (j.missing && j.missing.length) notes.push(`<div class="hint">Not found in Shelf: ${esc(j.missing.join(', '))}</div>`);
+    if (j.truncated) notes.push('<div class="hint">Shelf shows at most 300 labels per sheet page: only the first 300 are listed. Use the sheet\'s "Next" page for the rest.</div>');
+    if (LABS.length > MAX_PRINT) notes.push(`<div class="hint">At most ${MAX_PRINT} labels per print run: only the first ${MAX_PRINT} are ticked.</div>`);
+    $('notes').innerHTML = notes.join('');
+    $('list').innerHTML = LABS.map((l, i) => `<div class="lab" data-code="${esc(l.code)}">
+      <label><input type="checkbox" data-i="${i}"${i < MAX_PRINT ? ' checked' : ''}>
+      <img loading="lazy" alt="label ${esc(l.code)}" src="${esc(preview(l))}">
+      <div><div class="t">${esc(l.text || '(no title)')}</div><div class="m"><b>${esc(l.code)}</b>${l.copy_number > 1 ? ' · copy ' + l.copy_number : ''}</div>
+      <div class="res" data-res></div></div></label></div>`).join('') || '<div class="m">Nothing to print.</div>';
+  }
+  for (const row of document.querySelectorAll('.lab')) {
+    const r = RES[row.dataset.code], el = row.querySelector('[data-res]');
+    el.className = 'res' + (r ? (r.ok ? ' ok' : r.skipped ? ' skip' : ' err') : '');
+    el.textContent = !r ? '' : r.ok ? (r.confirmed ? '✓ printed' : '✓ sent to the printer') : r.skipped ? 'not sent' : '✗ ' + (r.error || 'failed');
+  }
+  count();
+}
+const ticked = () => [...document.querySelectorAll('.lab input[type=checkbox]:checked')].map(c => LABS[+c.dataset.i].code);
+function count() {
+  const n = ticked().length;
+  $('count').textContent = `${n} of ${LABS.length} ticked`;
+  $('print').textContent = n > 1 ? `Print on labeller (${n})` : 'Print on labeller';
+  $('print').disabled = BUSY || !!PENDING || n === 0 || n > MAX_PRINT;
+  if (n > MAX_PRINT) $('count').textContent += ` (at most ${MAX_PRINT} per run)`;
+}
+$('list').addEventListener('change', count);
+$('all').onclick = () => { document.querySelectorAll('.lab input[type=checkbox]').forEach(c => { c.checked = true; }); count(); };
+$('none').onclick = () => { document.querySelectorAll('.lab input[type=checkbox]').forEach(c => { c.checked = false; }); count(); };
+
+// ---------- print + "did it come out?" ----------
+function savePending() { try { PENDING ? localStorage.setItem('shelflabels.pending', JSON.stringify(PENDING)) : localStorage.removeItem('shelflabels.pending'); } catch {} }
+function drawPending() {
+  $('after').style.display = PENDING ? 'block' : 'none';
+  if (PENDING) { const c = PENDING.codes; $('afterinfo').textContent = `${c.length} label${c.length > 1 ? 's' : ''} (${c[0]}${c.length > 1 ? '…' + c[c.length - 1] : ''})`; }
+  count();
+}
+$('print').onclick = async () => {
+  const only = ticked();
+  if (!SEL || !only.length || PENDING) return;
+  BUSY = true; count();
+  status(`Printing ${only.length} label${only.length > 1 ? 's' : ''}… (a few seconds each)`);
+  try {
+    const { status: code, j } = await api('labels/shelf', { ...SEL, only });
+    if (!j.results) throw new Error(j.error || 'HTTP ' + code);
+    for (const r of j.results) RES[r.code] = r;
+    document.querySelectorAll('.lab').forEach(row => { const r = RES[row.dataset.code]; if (r && r.ok) row.querySelector('input').checked = false; });
+    const sent = j.sent || [], fail = (j.failed || [])[0];
+    if (sent.length) { PENDING = { codes: sent, time: Date.now() }; savePending(); }
+    draw(); drawPending();
+    const miss = j.missing && j.missing.length ? ` Not found in Shelf any more: ${j.missing.join(', ')}.` : '';
+    if (fail) status(`Sent ${sent.length}, then stopped: ${fail.code}: ${fail.error}. The rest were not sent and stay ticked.${sent.length ? ' Confirm the ones that printed in the yellow box.' : ''}${miss}`, 'bad');
+    else status(`Sent ${sent.length} label${sent.length > 1 ? 's' : ''} to the label printer. Please confirm in the yellow box that they came out.${miss}`);
+    if (sent.length) $('after').scrollIntoView?.({ block:'nearest', behavior:'smooth' });
+  } catch (err) { status('Error: ' + err.message, 'bad'); }
+  finally { BUSY = false; count(); }
+};
+$('yes').onclick = () => {
+  for (const c of PENDING ? PENDING.codes : []) if (RES[c]) RES[c].confirmed = true;
+  PENDING = null; savePending(); draw(); drawPending(); status('Done.', 'good');
+};
+$('no').onclick = () => {
+  const c = new Set(PENDING ? PENDING.codes : []);
+  document.querySelectorAll('.lab').forEach(row => { if (c.has(row.dataset.code)) { row.querySelector('input').checked = true; delete RES[row.dataset.code]; } });
+  PENDING = null; savePending(); draw(); drawPending();
+  status(c.size ? 'Those labels are ticked again: untick the ones that did come out, then Print on labeller.' : '');
+};
+
+// ---------- bookmarklet ----------
+$('bm').setAttribute('href', BOOKMARKLET);
+$('bm').addEventListener('click', e => { e.preventDefault(); status('Drag the button to the bookmarks bar instead of clicking it.'); });
+$('bmtext').textContent = BOOKMARKLET;
+$('copybm').onclick = async () => {
+  try { await navigator.clipboard.writeText(BOOKMARKLET); status('Bookmark address copied.', 'good'); }
+  catch { status('Copy failed: select the text in the box and copy it.', 'bad'); }
+};
+
+// ---------- start: ?sheet= (bookmarklet), ?item=, ?from=&to=, ?codes= ----------
+try { PENDING = JSON.parse(localStorage.getItem('shelflabels.pending') || 'null'); } catch { PENDING = null; }
+if (PENDING && !(Array.isArray(PENDING.codes) && PENDING.codes.length)) PENDING = null;
+drawPending();
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (q.get('sheet')) { setMode('sheet'); $('sheet').value = q.get('sheet'); }
+  else if (q.get('item')) { setMode('item'); $('item').value = q.get('item'); }
+  else if (q.get('from')) { setMode('range'); $('from').value = q.get('from'); $('to').value = q.get('to') || ''; }
+  else if (q.get('codes')) { setMode('codes'); $('codes').value = splitCodes(q.get('codes')).join(' '); }
+  else return;
+  load();
+})();
+</script>
+</body>
+</html>
