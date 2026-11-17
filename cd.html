@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>CD Library</title>
+<title>Media tools</title>
 <link rel="stylesheet" href="vendor/fontawesome-6.7.2/css/all.min.css">
 <style>
   :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --acc:#2457d6; --bar:#fff; }
@@ -61,7 +61,7 @@
 <body>
 <header>
   <a class="hbtn" id="home" href="#" aria-label="Menu" title="Menu"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i></a>
-  <h1><a href="#">CD Library</a><span class="here" id="here"></span></h1>
+  <h1><a href="#">Media tools</a><span class="here" id="here"></span></h1>
   <nav class="tabs" id="tabs" aria-label="Sections"></nav>
   <div class="ext" id="ext"></div>
 </header>
@@ -122,7 +122,7 @@ function show(hash) {
   document.querySelectorAll('[data-view]').forEach(a => mark(a, a.dataset.view === CUR));
   mark($('home'), !v);
   $('here').innerHTML = v ? ` · <i class="fa-solid ${v.icon}" aria-hidden="true"></i>${esc(v.label)}` : '';
-  document.title = 'CD Library' + (v ? ' · ' + v.label : '');
+  document.title = 'Media tools' + (v ? ' · ' + v.label : '');
   setHash(v ? v.id + (tab ? '/' + tab : '') : '');
   if (!v) $('menu').scrollTop = 0;
 }
