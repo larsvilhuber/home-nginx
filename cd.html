@@ -82,6 +82,7 @@ const VIEWS = [
   { id:'catalog', label:'Cataloguer', icon:'fa-book-open',       src:'catalog.html', desc:'Add anything to Shelf' },
   { id:'labels',  label:'Shelf labels', icon:'fa-print',         src:'shelflabels.html', desc:'Print Shelf labels on the labeller' },
   { id:'review',  label:'Review',     icon:'fa-clipboard-check', src:'review.html',  desc:'Check MusicBrainz tags' },
+  { id:'help',    label:'Help',       icon:'fa-circle-question', src:'help.html',    desc:'What to do, step by step', iconOnly:true },
 ];
 const EXT = [
   { label:'CD Ripper',      icon:'fa-compact-disc', href:'http://hibou:8086/' },
@@ -131,7 +132,10 @@ function show(hash) {
 // menu tiles, wide-screen tabs, outside links
 $('grid').innerHTML = VIEWS.map(v => `<a class="tile" href="#${v.id}" data-view="${v.id}"><i class="fa-solid ${v.icon}" aria-hidden="true"></i>
   <span class="name">${esc(v.label)}</span><span class="desc">${esc(v.desc)}</span></a>`).join('');
-$('tabs').innerHTML = VIEWS.map(v => `<a href="#${v.id}" data-view="${v.id}"><i class="fa-solid ${v.icon}" aria-hidden="true"></i>${esc(v.label)}</a>`).join('');
+// iconOnly: just the icon in the wide-screen tab row (keeps the row short); the menu tile has the name
+$('tabs').innerHTML = VIEWS.map(v => v.iconOnly
+  ? `<a href="#${v.id}" data-view="${v.id}" title="${esc(v.label)}" aria-label="${esc(v.label)}"><i class="fa-solid ${v.icon}" aria-hidden="true"></i></a>`
+  : `<a href="#${v.id}" data-view="${v.id}"><i class="fa-solid ${v.icon}" aria-hidden="true"></i>${esc(v.label)}</a>`).join('');
 const extLink = (e, cls) => `<a${cls ? ` class="${cls}"` : ''} href="${esc(e.href)}" target="_blank" rel="noopener"><i class="fa-solid ${e.icon}" aria-hidden="true"></i>
   <span class="name">${esc(e.label)}</span><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>`;
 $('gridext').innerHTML = EXT.map(e => extLink(e, 'tile')).join('');

@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Help</title>
+<link rel="stylesheet" href="vendor/fontawesome-6.7.2/css/all.min.css">
+<style>
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --card:#f3f3f6; --ok:#1b7f3b; --no:#b3261e; --warn:#9a6700; --acc:#2457d6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#121214; --fg:#ececf1; --mut:#9a9aa6; --card:#1e1e22; --ok:#4cc26b; --no:#ff6b61; --warn:#e3b341; --acc:#7ea2ff; }
+  }
+  * { box-sizing:border-box; }
+  html, body { overflow-x:hidden; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.45 system-ui,sans-serif; }
+  main { max-width:720px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.3rem; margin:0 0 4px; }
+  h2 { font-size:1.15rem; margin:4px 0 4px; display:flex; gap:9px; align-items:baseline; }
+  h2 i { color:var(--acc); }
+  h3 { font-size:.95rem; margin:16px 0 4px; }
+  .sub { color:var(--mut); font-size:.85rem; margin-bottom:12px; }
+  a { color:var(--acc); }
+  [hidden] { display:none !important; }
+
+  /* scenario picker: a scrollable strip of tabs (wide screens), a select (phones) */
+  .pick { margin:0 0 12px; }
+  .pick select { width:100%; padding:10px; font-size:1rem; border-radius:8px; border:1px solid var(--mut); background:var(--bg); color:var(--fg); }
+  .strip { display:none; gap:6px; overflow-x:auto; padding:2px 0 8px; scrollbar-width:thin; }
+  .strip button { flex:none; display:inline-flex; align-items:center; gap:7px; padding:8px 12px; font:inherit; font-size:.9rem;
+                  border:1px solid #8884; border-radius:99px; background:var(--card); color:var(--fg); cursor:pointer; white-space:nowrap; }
+  .strip button i { color:var(--acc); }
+  .strip button[aria-selected=true] { background:var(--acc); border-color:var(--acc); color:#fff; }
+  .strip button[aria-selected=true] i { color:#fff; }
+  @media (min-width:700px) { .strip { display:flex; flex-wrap:wrap; overflow:visible; } .pick select { display:none; } }
+
+  .when { background:var(--card); border-left:4px solid var(--acc); border-radius:6px; padding:8px 12px; margin:8px 0 12px; }
+  ol.steps { margin:6px 0; padding-left:1.5em; }
+  ol.steps > li { margin:7px 0; padding-left:2px; }
+  ol.steps ul, .card ul { margin:4px 0; padding-left:1.2em; }
+  .card { background:var(--card); border-radius:10px; padding:10px 12px; margin:10px 0; }
+  .see { border-left:4px solid var(--ok); }
+  .bad { border-left:4px solid var(--no); }
+  .note { border-left:4px solid var(--warn); }
+  .card > b:first-child { display:block; margin-bottom:2px; }
+  .card ul { margin:2px 0; }
+  .card li { margin:4px 0; }
+  .ui { display:inline; padding:0 5px; border-radius:5px; background:color-mix(in srgb, var(--acc) 13%, var(--bg)); font-weight:600; font-size:.93em; white-space:normal; }
+  code { font-size:.85em; background:var(--card); padding:1px 4px; border-radius:4px; word-break:break-all; }
+  pre { white-space:pre-wrap; word-break:break-all; font-size:.8rem; background:var(--bg); padding:8px; border-radius:8px; margin:6px 0; }
+  .m { color:var(--mut); font-size:.85rem; }
+  html.embed h1, html.embed .sub { display:none; }
+</style>
+<script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
+</head>
+<body>
+<main>
+  <h1>Help</h1>
+  <div class="sub">What to do with each kind of disc or object, step by step. Pick what you have in your hands.</div>
+
+  <div class="pick">
+    <select id="sel" aria-label="Scenario"></select>
+    <div class="strip" id="strip" role="tablist" aria-label="Scenarios"></div>
+  </div>
+
+  <!-- ================================================================== -->
+  <section data-help="cd-barcode" data-icon="fa-compact-disc" data-short="CD with barcode" role="tabpanel">
+    <h2><i class="fa-solid fa-compact-disc" aria-hidden="true"></i>CD with a barcode</h2>
+    <div class="when">When to use: a music CD whose case has a barcode (UPC/EAN), that you want to rip and play.</div>
+    <ol class="steps">
+      <li>Put the CD in the ARM drive. ARM rips it by itself; you can follow it in <a href="http://hibou:8086/" target="_blank" rel="noopener">CD Ripper</a> (under "Elsewhere" in the menu). Wait until it has finished.</li>
+      <li>Open <a href="check.html?tab=cd" target="_top" data-hub="check/cd">Check → CD</a>. Tap <span class="ui">Scan barcode</span> and hold the case barcode to the camera (or type it in the box and tap <span class="ui">Look up</span>).</li>
+      <li>Check asks MusicBrainz and shows the albums that could be this CD. The fresh rip is marked <span class="ui">ripped</span> (purple). Tap it.</li>
+      <li>Tap <span class="ui">Save + import</span>. The rip is moved into the library and Lyrion rescans.</li>
+      <li>Open <a href="play.html" target="_top" data-hub="play">Play</a>, scan the same barcode: it plays.</li>
+    </ol>
+    <div class="card see"><b>What you should see</b>
+      "Imported. Waiting for Lyrion to rescan…", then "Imported and in the library." with a green <span class="ui">Imported</span> badge. About 30 s later the record is sent to Shelf by itself (tag <code>cdcheck</code>, plus <code>numérisé</code> because it plays); the card then shows "Shelf: &lt;location&gt; · item #N ↗".</div>
+    <div class="card note"><b>The CD replaces an mp3 album already in the library</b>
+      <ul>
+        <li>Before importing, move the old mp3 folder to <code>/media/space2/music.mp3-backup/</code>, keeping its path under the library root. For example:
+          <pre>mv /media/space2/music/Dizzy_Gillespie_-_Lady_Be_Good /media/space2/music.mp3-backup/</pre>
+          Never delete it, and never make another backup folder. The import refuses to run while a folder with the same name is still in the library.</li>
+        <li>If the barcode already points at the old mp3 album (Check shows a green <span class="ui">Confirmed</span> card), keep that barcode: tap <span class="ui">Change</span>, pick the <span class="ui">ripped</span> entry and tap <span class="ui">Save + import</span>. Do not make an LV label for it.</li>
+      </ul></div>
+    <div class="card bad"><b>If something goes wrong</b>
+      <ul>
+        <li>"not in MusicBrainz": type the artist or album in <span class="ui">or search artist / album</span> and tap <span class="ui">Search</span>. The barcode stays armed, so you can still pick the rip and <span class="ui">Save + import</span>.</li>
+        <li>No <span class="ui">ripped</span> entry: ARM has not finished, or the rip has a different name. Search by artist / album. If you only tapped <span class="ui">Save</span>, the card shows <span class="ui">Ripped, waiting to import</span>: tap <span class="ui">Import to library</span>.</li>
+        <li>"Imported; Lyrion has not listed it yet": wait a minute and look the barcode up again.</li>
+        <li>Wrong album saved: tap <span class="ui">Change</span> and pick again (or <span class="ui">Forget</span>).</li>
+      </ul></div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section data-help="cd-nobarcode" data-icon="fa-tag" data-short="CD without barcode" role="tabpanel">
+    <h2><i class="fa-solid fa-tag" aria-hidden="true"></i>CD without a barcode</h2>
+    <div class="when">When to use: a CD with no barcode on the case (or only a record-club number such as <code>D136343</code>).</div>
+    <h3>Club number (D-code) printed on the case</h3>
+    <ol class="steps">
+      <li>Rip the CD in ARM as usual.</li>
+      <li>In <a href="check.html?tab=cd" target="_top" data-hub="check/cd">Check → CD</a>, scan the club code or type it in <span class="ui">or type barcode / catalog no.</span> and tap <span class="ui">Look up</span>. It is used like a barcode.</li>
+      <li>MusicBrainz usually does not know club numbers. Then search the artist / album below; pick the <span class="ui">ripped</span> entry and tap <span class="ui">Save + import</span> (or the library album and <span class="ui">Save</span>).</li>
+    </ol>
+    <h3>No code at all: make an LV label</h3>
+    <ol class="steps">
+      <li>Rip the CD in ARM.</li>
+      <li>Open <a href="tag.html?tab=cd" target="_top" data-hub="tag/cd">Tag → CD</a>. Search the artist / album (an empty search lists what was ripped recently). Leave <span class="ui">hide albums that already have a barcode</span> ticked.</li>
+      <li>On the album (under "Ripped, not yet in the library" or "In the library"), tap <span class="ui">Make label</span>. The new LV code goes into the <span class="ui">Print queue</span> at the bottom.</li>
+      <li>Print it: <span class="ui">Print on labeller</span> (or wait for a full sheet). Answer the yellow box. See <a href="#labels">Printing labels</a>.</li>
+      <li>Stick the label on the case.</li>
+      <li>For a rip: scan the new label in <a href="check.html?tab=cd" target="_top" data-hub="check/cd">Check → CD</a>; it shows <span class="ui">Ripped, waiting to import</span>; tap <span class="ui">Import to library</span>.</li>
+    </ol>
+    <div class="card see"><b>What you should see</b>
+      The album's badge goes from <span class="ui">no barcode</span> to "LV… queued", then "LV… printed" once you confirm the print.</div>
+    <div class="card bad"><b>If something goes wrong</b>
+      <ul>
+        <li>Label lost or damaged: on the album in Tag → CD, tap <span class="ui">Print again</span>.</li>
+        <li>Album has a barcode already but you still want an LV: untick the box and use <span class="ui">Label anyway</span>.</li>
+      </ul></div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section data-help="dvd-new" data-icon="fa-film" data-short="New DVD" role="tabpanel">
+    <h2><i class="fa-solid fa-film" aria-hidden="true"></i>New DVD: maybe the film is already ripped</h2>
+    <div class="when">When to use: a DVD or Blu-ray that is not catalogued yet. The film itself may already be in the film library (ripped from another copy, or downloaded), so look before you rip.</div>
+    <ol class="steps">
+      <li>Make sure the disc is not catalogued: in <a href="check.html?tab=dvd" target="_top" data-hub="check/dvd">Check → DVD</a> tap <span class="ui">Scan barcode</span> (or type the code and tap <span class="ui">Check</span>). "Nothing is catalogued under this code." means carry on. If it shows the film, you are done.</li>
+      <li>Open the <a href="catalog.html" target="_top" data-hub="catalog">Cataloguer</a>, <span class="ui">Look it up</span>. Set the kind to <span class="ui">DVD</span> (or <span class="ui">Blu-ray</span>), type the title (films are found by title) and tap <span class="ui">Search</span>. Tap the right TMDB result.</li>
+      <li><b>If the film is in the library</b>, a ticked box appears: <span class="ui">This film is already in your library: … — link this disc to it</span>. Leave it ticked (pick the version if there are several).
+        <ul>
+          <li>Code: <span class="ui">Use the barcode on the item</span> and scan the case UPC, or <span class="ui">Make an LV label</span> if the case has none.</li>
+          <li>Choose the <span class="ui">Shelf location</span>, then tap <span class="ui">Catalogue it</span>.</li>
+          <li>Do not rip the disc.</li>
+        </ul></li>
+      <li><b>If no box appears</b>, the film is not in the library: rip it.
+        <ul>
+          <li>Put the disc in the ARM drive and wait for the rip.</li>
+          <li>In <a href="tag.html?tab=dvd" target="_top" data-hub="tag/dvd">Tag → DVD</a>, under <span class="ui">1. Ripped, waiting to import</span> tap <span class="ui">Refresh</span>, then <span class="ui">Choose</span> on the rip.</li>
+          <li><span class="ui">2. Files</span>: check which file is the main film. <span class="ui">3. Identify the film</span>: search TMDB and pick it. <span class="ui">4. Code</span>: <span class="ui">Use the case barcode</span> or <span class="ui">Make an LV label</span>.</li>
+          <li>Tap <span class="ui">Preview</span>, read the plan, then <span class="ui">Import</span>.</li>
+        </ul></li>
+    </ol>
+    <div class="card see"><b>What you should see</b>
+      Cataloguer: "Catalogued as …" and "Linked to the film in your library: … — it plays from CD / DVD Play." Tag import: a green <span class="ui">Imported</span> card with a button <span class="ui">Check … in Check (DVD)</span>; all rows green there. Shelf gets the item about 30 s later.</div>
+    <div class="card bad"><b>If something goes wrong</b>
+      <ul>
+        <li>No box, but you know the film is ripped (different title, other language): catalogue the disc anyway, then in Check → DVD scan it and use <span class="ui">Link to a film already in the library</span>; search the library by another title.</li>
+        <li>The same thing works from <a href="tag.html?tab=dvd" target="_top" data-hub="tag/dvd">Tag → DVD</a> → <span class="ui">Catalogue only (not ripped)</span> (no location choice there).</li>
+        <li>Import shows <span class="ui">This film already exists in the library.</span>: see <a href="#dvd-version">Second rip of a film</a>.</li>
+        <li>A rip is greyed "not ready": ARM is still working. Wait, then <span class="ui">Refresh</span>.</li>
+      </ul></div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section data-help="dvd-version" data-icon="fa-clone" data-short="Second rip of a film" role="tabpanel">
+    <h2><i class="fa-solid fa-clone" aria-hidden="true"></i>New rip of a film already in the library</h2>
+    <div class="when">When to use: you ripped a DVD whose film is already in the library (another cut, a better copy) and want to keep both. Both are kept as versions; nothing is replaced.</div>
+    <ol class="steps">
+      <li>Import it in <a href="tag.html?tab=dvd" target="_top" data-hub="tag/dvd">Tag → DVD</a> as usual (<span class="ui">Choose</span>, identify, code).</li>
+      <li>You can fill <span class="ui">Version (optional, e.g. Director's Cut)</span> straight away. If you do not, <span class="ui">Preview</span> stops with a yellow box: <span class="ui">This film already exists in the library.</span> It lists the existing versions.</li>
+      <li>Type a version label (for example "Director's Cut", "Extended", "DVD") and tap <span class="ui">Use it</span>.</li>
+      <li>Check the plan, then <span class="ui">Import</span>.</li>
+    </ol>
+    <div class="card see"><b>What you should see</b>
+      The file goes in the film's folder as <code>&lt;Title&gt; - &lt;version&gt;</code>. In Play, this disc's code plays this version; the other disc plays the other one.</div>
+    <div class="card bad"><b>If something goes wrong</b>
+      <ul>
+        <li><span class="ui">Already catalogued.</span> with a code: that code (case barcode) is already used. If it really is a second copy, tap <span class="ui">Import anyway</span>; otherwise follow the <span class="ui">check …</span> link.</li>
+        <li>You do not want a second file: do not import. Catalogue the disc and link it to the existing film (<a href="#dvd-new">New DVD</a>, step 3).</li>
+      </ul></div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section data-help="film-norip" data-icon="fa-video" data-short="Film you won't rip" role="tabpanel">
+    <h2><i class="fa-solid fa-video" aria-hidden="true"></i>DVD, Blu-ray or VHS you won't rip</h2>
+    <div class="when">When to use: you only want the film on the shelf list (where it is, which code), not playable.</div>
+    <ol class="steps">
+      <li>Open the <a href="catalog.html" target="_top" data-hub="catalog">Cataloguer</a>, <span class="ui">Look it up</span>.</li>
+      <li>Kind: <span class="ui">DVD</span>, <span class="ui">Blu-ray</span> or <span class="ui">VHS</span>. Type the title (and year if you know it), tap <span class="ui">Search</span>, pick the TMDB result.</li>
+      <li>Code: <span class="ui">Use the barcode on the item</span> (scan the case) or <span class="ui">Make an LV label</span> (tapes usually have none).</li>
+      <li>Choose the <span class="ui">Shelf location</span> and tap <span class="ui">Catalogue it</span>. Print the LV label if you made one and stick it on the case.</li>
+    </ol>
+    <div class="card see"><b>What you should see</b>
+      "Catalogued as …", then "Waiting for Shelf… (sent about 30 s after saving)" turning into "In Shelf: item #N ↗". In Play the code says "Catalogued, not playable".</div>
+    <div class="card note"><b>Quicker, without location</b>
+      <a href="tag.html?tab=dvd" target="_top" data-hub="tag/dvd">Tag → DVD</a> → <span class="ui">Catalogue only (not ripped)</span>: kind, <span class="ui">search TMDB (title)</span>, code, <span class="ui">Add to catalogue</span>. It goes to the default location (Magog / Sous-sol); change it in Shelf if needed.</div>
+    <div class="card bad"><b>If something goes wrong</b>
+      <ul>
+        <li>The film turns out to be in the library: keep the ticked <span class="ui">This film is already in your library</span> box; the disc will then play.</li>
+        <li>TMDB finds nothing: fill the title by hand under <span class="ui">2. Record</span> (or <span class="ui">By hand</span>).</li>
+      </ul></div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section data-help="vinyl-barcode" data-icon="fa-record-vinyl" data-short="Vinyl / cassette, barcode" role="tabpanel">
+    <h2><i class="fa-solid fa-record-vinyl" aria-hidden="true"></i>Vinyl or cassette with a barcode</h2>
+    <div class="when">When to use: a record or tape whose sleeve or case carries a barcode.</div>
+    <ol class="steps">
+      <li>Open the <a href="catalog.html" target="_top" data-hub="catalog">Cataloguer</a>, <span class="ui">Look it up</span>. Kind: <span class="ui">vinyl</span> or <span class="ui">cassette</span>.</li>
+      <li>Tap <span class="ui">Scan</span> next to <span class="ui">barcode on the sleeve / case</span> and hold the barcode to the camera. The search runs by itself (MusicBrainz and Discogs).</li>
+      <li>Pick the pressing in your hands: compare label · catalogue number, format and country.</li>
+      <li>Code: <span class="ui">Use the barcode on the item</span> is already chosen with the scanned code. No label to print.</li>
+      <li>Choose the <span class="ui">Shelf location</span> and tap <span class="ui">Catalogue it</span>.</li>
+    </ol>
+    <div class="card see"><b>What you should see</b>
+      "Catalogued as &lt;barcode&gt;", then "In Shelf: item #N ↗". The catalogue number shows in the Shelf item's notes as <code>[cdcheck &lt;code&gt;] Cat. no. …</code> (Shelf has no field for it).</div>
+    <div class="card bad"><b>If something goes wrong</b>
+      <ul>
+        <li>Nothing found by barcode: clear it and search by catalogue number or title + artist instead (see <a href="#vinyl-nobarcode">Vinyl without barcode</a>), then type the barcode under <span class="ui">Use the barcode on the item</span>.</li>
+        <li><span class="ui">Already catalogued</span>: tap <span class="ui">Show …</span> to see it, or <span class="ui">It is a second copy: catalogue anyway</span>.</li>
+      </ul></div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section data-help="vinyl-nobarcode" data-icon="fa-record-vinyl" data-short="Vinyl, no barcode" role="tabpanel">
+    <h2><i class="fa-solid fa-record-vinyl" aria-hidden="true"></i>Vinyl with no barcode at all</h2>
+    <div class="when">When to use: an older record with no barcode anywhere. You find it by its catalogue number and give it an LV label.</div>
+    <ol class="steps">
+      <li>Open the <a href="catalog.html" target="_top" data-hub="catalog">Cataloguer</a>, <span class="ui">Look it up</span>. Kind: <span class="ui">vinyl</span>.</li>
+      <li>Type the catalogue number from the label or spine in <span class="ui">catalogue no. (e.g. SHVL 804)</span>, exactly as printed, and tap <span class="ui">Search</span>. Matching is exact: if nothing comes, try again with and without spaces or dashes (<code>SHVL 804</code>, <code>SHVL804</code>, <code>SHVL-804</code>).</li>
+      <li>Still nothing: search by title + artist instead (catalogue number empty).</li>
+      <li>Pick the pressing: same label, same catalogue number, same country as your copy.</li>
+      <li>Code: <span class="ui">Make an LV label (queued for printing below; stick it on the sleeve)</span>.</li>
+      <li>Choose the <span class="ui">Shelf location</span> and tap <span class="ui">Catalogue it</span>.</li>
+      <li>Print the label on the labeller (<span class="ui">Print on labeller</span> in the <span class="ui">Print queue</span> lower down) and confirm in the yellow box.</li>
+      <li>Stick the label on the sleeve, not on the record.</li>
+    </ol>
+    <div class="card see"><b>What you should see</b>
+      "Catalogued as LV…" and "An LV label was queued: print it below and stick it on the sleeve." Shortly after, "In Shelf: item #N ↗"; the catalogue number is in the Shelf notes line.</div>
+    <div class="card note"><b>Other ways</b>
+      <ul>
+        <li>Not in MusicBrainz or Discogs: tap <span class="ui">By hand</span> and fill <span class="ui">2. Record</span> yourself (title, artist, <span class="ui">Label / publisher</span>, <span class="ui">Catalogue no.</span>, country).</li>
+        <li>Shelf's own <a href="https://hibou:18443/music" target="_blank" rel="noopener">Music page</a> (hidden from Shelf's menu) also searches MusicBrainz by title / artist, barcode or catalogue number (exact matches; partial numbers often fail). An item added there has no LV code yet: link it afterwards with <a href="#in-shelf">Already in Shelf</a>.</li>
+      </ul></div>
+    <div class="card bad"><b>If something goes wrong</b>
+      <ul>
+        <li>"MusicBrainz: …" under the Search button (busy): wait a minute and search again; Discogs results still show.</li>
+        <li>Label did not print: see <a href="#labels">Printing labels</a>.</li>
+      </ul></div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section data-help="in-shelf" data-icon="fa-link" data-short="Already in Shelf" role="tabpanel">
+    <h2><i class="fa-solid fa-link" aria-hidden="true"></i>Something already in Shelf</h2>
+    <div class="when">When to use: the item was added by hand in Shelf (or on Shelf's Music page), and you want the media tools to know it, without a second Shelf item.</div>
+    <h3>Not catalogued here yet</h3>
+    <ol class="steps">
+      <li>In the <a href="catalog.html" target="_top" data-hub="catalog">Cataloguer</a>, tap <span class="ui">A Shelf item</span>.</li>
+      <li>Scan or type its Shelf label (<code>CV-000123</code>) or its retail barcode, or paste its Shelf address (<code>https://hibou:18443/item/…</code>). Tap <span class="ui">Find</span>.</li>
+      <li>"Found Shelf item #N" fills the form. Choose a code if it has none (<span class="ui">Use the barcode on the item</span> or <span class="ui">Make an LV label</span>), then <span class="ui">Catalogue it</span>.</li>
+    </ol>
+    <h3>Already catalogued here, but not linked</h3>
+    <ol class="steps">
+      <li>Scan the code in <a href="check.html?tab=cd" target="_top" data-hub="check/cd">Check → CD</a> or <a href="check.html?tab=dvd" target="_top" data-hub="check/dvd">Check → DVD</a>. The card says "Not in Shelf yet." Tap <span class="ui">Link to Shelf item…</span>.</li>
+      <li>Type the CV- code, barcode, Shelf address or item number (or <span class="ui">Scan</span>), tap <span class="ui">Find</span>, then <span class="ui">Link … to this item</span>.</li>
+      <li>If the Shelf item has another UPC, a button <span class="ui">Replace the Shelf item's UPC (…) with …</span> appears; use it only when the code on the item is the right one.</li>
+      <li>One Shelf item for several discs (a set): tick <span class="ui">Link this code too (another disc of the same set)</span>.</li>
+    </ol>
+    <div class="card see"><b>What you should see</b>
+      "Linked to Shelf item #N." and "Scan check in Shelf: … finds this item". No new Shelf item is made and the location is not changed.</div>
+    <div class="card bad"><b>If something goes wrong</b>
+      <ul>
+        <li>The card says <span class="ui">Shelf already has an item for this (#N), made by hand</span>: the automatic push stopped instead of making a duplicate. The link box opens with #N filled in: tap <span class="ui">Find</span>, then link.</li>
+        <li>"Shelf has no such item.": check the number in the item's address.</li>
+      </ul></div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section data-help="books" data-icon="fa-book" data-short="Books, games, puzzles" role="tabpanel">
+    <h2><i class="fa-solid fa-book" aria-hidden="true"></i>Books, games, puzzles</h2>
+    <div class="when">When to use: anything that is not music or film. These are added in Shelf itself, not here.</div>
+    <ol class="steps">
+      <li>Open <a href="https://hibou:18443" target="_blank" rel="noopener">Shelf</a> and add the item there (its scanner reads the ISBN / barcode). Board games and puzzles have their own types.</li>
+      <li>For a label: on the item, use <span class="ui">Assign code</span> on each copy, one copy at a time. Never use the bulk <span class="ui">Assign codes</span>.</li>
+      <li>Print it on the labeller with <a href="shelflabels.html" target="_top" data-hub="labels">Shelf labels</a>: <span class="ui">Item number</span> (the number in the item's address), <span class="ui">Show labels</span>, then <span class="ui">Print on labeller</span>.</li>
+    </ol>
+    <div class="card note"><b>Good to know</b>
+      The Cataloguer does not make new Shelf items for books or games ("Add books and games in Shelf, then start from "A Shelf item"."). Scanning a CV- label in Play shows "In Shelf, not playable" with its location.</div>
+    <div class="card bad"><b>If something goes wrong</b>
+      <ul><li>"Shelf has no labels for that selection": the copy has no code yet; assign one first.</li></ul></div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section data-help="labels" data-icon="fa-print" data-short="Printing labels" role="tabpanel">
+    <h2><i class="fa-solid fa-print" aria-hidden="true"></i>Printing labels</h2>
+    <div class="when">When to use: LV labels are waiting in the print queue, or a Shelf label (CV-…) needs printing or reprinting.</div>
+    <h3>LV labels (made in Tag or the Cataloguer)</h3>
+    <ol class="steps">
+      <li>The <span class="ui">Print queue</span> is at the bottom of <a href="tag.html" target="_top" data-hub="tag">Tag</a> (CD and DVD labels together) and of the <a href="catalog.html" target="_top" data-hub="catalog">Cataloguer</a>.</li>
+      <li>Labeller (Supvan, 40 × 30 mm): <span class="ui">Print on labeller</span> prints every queued label, one by one; <span class="ui">Label</span> on a line prints just that one. <span class="ui">Remove</span> takes one out of the queue.</li>
+      <li>Sheet printer: when the sheet is full the button reads "Print sheet (N)" (before that "Print anyway (N)"). Choose <span class="ui">Letter</span> or <span class="ui">A4</span>; a PDF opens to print. Cut along the dashed lines.</li>
+      <li>A yellow box asks <span class="ui">Did the labels come out of the label printer?</span> (or <span class="ui">Did the sheet print?</span>). Tap <span class="ui">Yes, mark printed</span>, or <span class="ui">No, keep queued</span> to try again.</li>
+    </ol>
+    <h3>Shelf labels (CV-…), and reprinting any label</h3>
+    <ol class="steps">
+      <li>Open <a href="shelflabels.html" target="_top" data-hub="labels">Shelf labels</a>. Choose <span class="ui">Shelf sheet URL</span>, <span class="ui">Item number</span>, <span class="ui">Code range</span> or <span class="ui">Codes</span> (LV codes work here too), then <span class="ui">Show labels</span>.</li>
+      <li>Untick what you do not want, then <span class="ui">Print on labeller</span>. Confirm with <span class="ui">Yes, all good</span> or <span class="ui">No, print some again</span>.</li>
+      <li>From a Shelf label sheet on a computer: drag the <span class="ui">Print on labeller</span> bookmark (on that page) to the bookmarks bar once, then click it on any Shelf sheet page. On a phone, paste the sheet's address in <span class="ui">Shelf sheet URL</span>, or use <span class="ui">Copy bookmark address</span>.</li>
+    </ol>
+    <div class="card note"><b>Reprinting</b>
+      A CD's LV label: <span class="ui">Print again</span> in Tag → CD. Any LV or CV- code: Shelf labels → <span class="ui">Codes</span>. Every sheet is also saved as a PDF in <code>/home/squeezebox/cdcheck-api/sheets/</code> (<span class="ui">open PDF again</span>).</div>
+    <div class="card bad"><b>If something goes wrong</b>
+      <ul>
+        <li>"Sent N, then stopped: …": the printer failed on one label; the rest stay queued. Confirm the ones that printed, check the printer (on, tape loaded), then print again.</li>
+        <li>Nothing came out: <span class="ui">No, keep queued</span>, fix the printer, try again.</li>
+      </ul></div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section data-help="play" data-icon="fa-circle-play" data-short="Playing" role="tabpanel">
+    <h2><i class="fa-solid fa-circle-play" aria-hidden="true"></i>Playing a CD or a film</h2>
+    <div class="when">When to use: you want to hear a CD or watch a film by scanning its case.</div>
+    <ol class="steps">
+      <li>Open <a href="play.html" target="_top" data-hub="play">Play</a>. In the first list choose the Lyrion player for music (<span class="ui">— choose a player —</span>).</li>
+      <li>For films, choose the TV in the second list (<span class="ui">— film on: choose a device —</span>). The TV must have Jellyfin open and signed in, or it is not listed; open it, then tap <span class="ui">↻</span> next to the list.</li>
+      <li>Tap <span class="ui">Start scanning</span> and show the barcode or LV label. The camera stays on for the next one. You can also type the code and tap <span class="ui">Play</span>.</li>
+      <li>A disc with several films asks <span class="ui">Which film on …?</span>: tap one.</li>
+    </ol>
+    <div class="card see"><b>What you should see</b>
+      "Playing: …" (music, with ⏮ ⏯ ⏭ ⏹) or "Playing on &lt;TV&gt;: …" (film, with <span class="ui">⏯ Pause / resume</span> and <span class="ui">⏹ Stop</span>). Below, "Shelf: &lt;location&gt; · item ↗" says where the case lives.</div>
+    <div class="card bad"><b>If something goes wrong</b>
+      <ul>
+        <li>"Catalogued, not playable": the disc is only catalogued. Rip it, or link it to a film in the library (<a href="#dvd-new">New DVD</a>).</li>
+        <li>"In Shelf, not playable": a Shelf-only item (book, game, …).</li>
+        <li>"not paired with an album yet. Pair it in Check.": see <a href="#cd-barcode">CD with a barcode</a>.</li>
+        <li>"Your saved film device is not open. Choose another.": open Jellyfin on the TV, sign in, <span class="ui">↻</span>.</li>
+        <li>"Camera needs HTTPS": open the page as <code>https://hibou/…</code>.</li>
+      </ul></div>
+  </section>
+
+  <!-- ================================================================== -->
+  <section data-help="trouble" data-icon="fa-triangle-exclamation" data-short="When something's wrong" role="tabpanel">
+    <h2><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>When something's wrong</h2>
+    <div class="when">When to use: a red row, an error message, or something that did not happen.</div>
+    <div class="card bad"><b>Check → DVD shows red rows</b>
+      The rows <span class="ui">File</span>, <span class="ui">List row</span>, <span class="ui">Symlink</span>, <span class="ui">Jellyfin</span> must all be green. Tap <span class="ui">Rebuild + rescan</span> (can take a while), then <span class="ui">Re-check</span>. If <span class="ui">File</span> stays red the file was moved or deleted: use <span class="ui">Link to a film already in the library</span> to point the code at the right film.</div>
+    <div class="card bad"><b>Shelf did not get the item</b>
+      <ul>
+        <li>Check (either tab) shows "Shelf push: &lt;error&gt;"; the Cataloguer's <span class="ui">Recently catalogued</span> shows "Shelf error". The full list is at <a href="/cdcheck-api/shelf/status" target="_blank" rel="noopener">/cdcheck-api/shelf/status</a> (<code>last_errors</code>, queue <code>waiting</code> / <code>retry</code> / <code>blocked</code>).</li>
+        <li>"already exists (item N) -- link by hand": tap <span class="ui">Link to Shelf item…</span> on the record and link it to #N (<a href="#in-shelf">Already in Shelf</a>).</li>
+        <li>Other errors (Shelf was down): push again from a shell on hibou:
+          <pre>curl -sk -X POST https://hibou/cdcheck-api/shelf/push -H 'Content-Type: application/json' -d '{"code":"LV00123"}'</pre>
+          or link it by hand as above.</li>
+      </ul></div>
+    <div class="card bad"><b>The TV is not in Play's film list</b>
+      Open Jellyfin on the TV and sign in, then <span class="ui">↻</span>. "Jellyfin unreachable" means the Jellyfin server itself is down.</div>
+    <div class="card bad"><b>A label did not print</b>
+      Answer <span class="ui">No, keep queued</span> (or <span class="ui">No, print some again</span> on Shelf labels), check the labeller, print again. See <a href="#labels">Printing labels</a>.</div>
+    <div class="card bad"><b>MusicBrainz is "busy"</b>
+      MusicBrainz often answers 503 when it is busy. The pages retry a few times; if it still fails ("MusicBrainz: …" in the Cataloguer, "Error: MusicBrainz HTTP 503" in Check), wait a minute and try again.</div>
+    <div class="card bad"><b>A CD scans as "no library album yet (still rescanning?)"</b>
+      Lyrion has not finished its rescan after an import. Wait, then scan again.</div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const secs = [...document.querySelectorAll('section[data-help]')];
+  const ids = secs.map(s => s.dataset.help);
+  const KEY = 'help.tab';
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+  const strip = document.getElementById('strip'), sel = document.getElementById('sel');
+
+  strip.innerHTML = secs.map(s => `<button type="button" role="tab" data-t="${esc(s.dataset.help)}" aria-controls="h-${esc(s.dataset.help)}">
+    <i class="fa-solid ${esc(s.dataset.icon)}" aria-hidden="true"></i>${esc(s.dataset.short)}</button>`).join('');
+  sel.innerHTML = secs.map((s, i) => `<option value="${esc(s.dataset.help)}">${i + 1}. ${esc(s.dataset.short)}</option>`).join('');
+  secs.forEach(s => { s.id = 'h-' + s.dataset.help; });
+
+  let cur = null;
+  function show(t, fromHash) {
+    if (!ids.includes(t)) return false;
+    cur = t;
+    secs.forEach(s => { s.hidden = s.dataset.help !== t; });
+    strip.querySelectorAll('button').forEach(b => { const on = b.dataset.t === t; b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1; });
+    sel.value = t;
+    try { localStorage.setItem(KEY, t); } catch {}
+    if (!fromHash) { try { history.replaceState(null, '', location.pathname + location.search + '#' + t); } catch {} }
+    return true;
+  }
+  const fromHash = () => location.hash.slice(1).toLowerCase();
+  let saved = null; try { saved = localStorage.getItem(KEY); } catch {}
+  const q = new URLSearchParams(location.search).get('tab');
+  const first = [fromHash(), q, saved, ids[0]].find(x => ids.includes(x));
+  show(first, first === fromHash());
+
+  strip.addEventListener('click', e => { const b = e.target.closest('button[data-t]'); if (b) { show(b.dataset.t); window.scrollTo(0, 0); } });
+  strip.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const i = ids.indexOf(cur), n = ids[(i + (e.key === 'ArrowRight' ? 1 : ids.length - 1)) % ids.length];
+    show(n); strip.querySelector(`[data-t="${n}"]`).focus();
+  });
+  sel.onchange = () => show(sel.value);
+  addEventListener('hashchange', () => { if (show(fromHash(), true)) window.scrollTo(0, 0); });
+
+  // links to other pages: inside the hub, switch the hub's section instead of loading a page in the page
+  document.addEventListener('click', e => {
+    const a = e.target.closest('a[data-hub]');
+    if (!a || !document.documentElement.classList.contains('embed') || parent === window) return;
+    e.preventDefault();
+    try { parent.location.hash = a.dataset.hub; } catch { location.href = a.href; }
+  });
+})();
+</script>
+</body>
+</html>
