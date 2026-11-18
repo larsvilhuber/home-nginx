@@ -243,11 +243,18 @@
   <section data-help="in-shelf" data-icon="fa-link" data-short="Already in Shelf" role="tabpanel">
     <h2><i class="fa-solid fa-link" aria-hidden="true"></i>Something already in Shelf</h2>
     <div class="when">When to use: the item was added by hand in Shelf (or on Shelf's Music page), and you want the media tools to know it, without a second Shelf item.</div>
-    <h3>Not catalogued here yet</h3>
+    <h3>Not catalogued here yet: scan it in Check</h3>
     <ol class="steps">
-      <li>In the <a href="catalog.html" target="_top" data-hub="catalog">Cataloguer</a>, tap <span class="ui">A Shelf item</span>.</li>
+      <li>Scan the code that is on the item (its Shelf label <code>CV-000123</code>, the sleeve or case barcode, an LV label) in <a href="check.html?tab=cd" target="_top" data-hub="check/cd">Check</a>, either tab. (<a href="play.html" target="_top" data-hub="play">Play</a> shows the same card.)</li>
+      <li>The card says <span class="ui">In Shelf only</span>: "In Shelf: <i>title</i> — <i>artist</i> · <i>location</i> · item #N ↗". Tap <span class="ui">Add to Media tools</span>.</li>
+      <li>The record is made with Shelf's title, artist, year and, for music added from Shelf's Music page, its catalogue number, label, country and format. Check then shows it again as <span class="ui">Catalogued</span>, linked to item #N. A CD can then be paired with its library album with <span class="ui">Change</span> (or tap <span class="ui">Look for it in the library</span> first).</li>
+      <li>If the card says "Media tools already has this Shelf item as <i>code</i>", the item carries another code too: tap <span class="ui">Show <i>code</i></span>, or <span class="ui">Add … too</span> to make this code a second way in.</li>
+    </ol>
+    <h3>Not catalogued here yet: from the Cataloguer</h3>
+    <ol class="steps">
+      <li>In the <a href="catalog.html" target="_top" data-hub="catalog">Cataloguer</a>, tap <span class="ui">A Shelf item</span>. (Typing a barcode Shelf knows under <span class="ui">Look it up</span> jumps here too.)</li>
       <li>Scan or type its Shelf label (<code>CV-000123</code>) or its retail barcode, or paste its Shelf address (<code>https://hibou:18443/item/…</code>). Tap <span class="ui">Find</span>.</li>
-      <li>"Found Shelf item #N" fills the form. Choose a code if it has none (<span class="ui">Use the barcode on the item</span> or <span class="ui">Make an LV label</span>), then <span class="ui">Catalogue it</span>.</li>
+      <li>"Found Shelf item #N" fills the form (with Shelf's catalogue number, label, country and format for music from Shelf's Music page). Choose a code if it has none (<span class="ui">Use the barcode on the item</span> or <span class="ui">Make an LV label</span>), then <span class="ui">Catalogue it</span>.</li>
     </ol>
     <h3>Already catalogued here, but not linked</h3>
     <ol class="steps">
@@ -262,6 +269,7 @@
       <ul>
         <li>The card says <span class="ui">Shelf already has an item for this (#N), made by hand</span>: the automatic push stopped instead of making a duplicate. The link box opens with #N filled in: tap <span class="ui">Find</span>, then link.</li>
         <li>"Shelf has no such item.": check the number in the item's address.</li>
+        <li>Check says "Nothing is catalogued under this code" or "Shelf did not answer": Shelf was down or slow; the media tools stop asking it for 20 seconds. Scan again a little later.</li>
       </ul></div>
   </section>
 
@@ -334,6 +342,8 @@
     <div class="when">When to use: a red row, an error message, or something that did not happen.</div>
     <div class="card bad"><b>Check → DVD shows red rows</b>
       The rows <span class="ui">File</span>, <span class="ui">List row</span>, <span class="ui">Symlink</span>, <span class="ui">Jellyfin</span> must all be green. Tap <span class="ui">Rebuild + rescan</span> (can take a while), then <span class="ui">Re-check</span>. If <span class="ui">File</span> stays red the file was moved or deleted: use <span class="ui">Link to a film already in the library</span> to point the code at the right film.</div>
+    <div class="card bad"><b>Check or Play says "unknown" for something that is in Shelf</b>
+      Unknown codes are looked up in Shelf too (<span class="ui">In Shelf only</span> → <span class="ui">Add to Media tools</span>, see <a href="#in-shelf">Already in Shelf</a>). If Shelf did not answer, Check says so: wait a little and scan again. If Shelf answers but does not know the code, the code is not on the Shelf item: link it with the Cataloguer's <span class="ui">A Shelf item</span> (item number or Shelf address).</div>
     <div class="card bad"><b>Shelf did not get the item</b>
       <ul>
         <li>Check (either tab) shows "Shelf push: &lt;error&gt;"; the Cataloguer's <span class="ui">Recently catalogued</span> shows "Shelf error". The full list is at <a href="/cdcheck-api/shelf/status" target="_blank" rel="noopener">/cdcheck-api/shelf/status</a> (<code>last_errors</code>, queue <code>waiting</code> / <code>retry</code> / <code>blocked</code>).</li>

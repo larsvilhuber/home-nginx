@@ -309,6 +309,16 @@ async function lookup() {
   if (FILMS.includes(kind) && !p.get('q')) { status('Films are found by title: type the title.', 'bad'); return; }
   $('lres').innerHTML = '<div class="m">Searching…</div>'; $('lerr').innerHTML = ''; $('lgo').disabled = true;
   try {
+    const bc = canon(p.get('barcode') || '');
+    if (bc) {                                            // a code Media tools or Shelf already knows: no external search
+      const k = await api('items/' + encodeURIComponent(bc));
+      if (k.ok) {
+        $('lres').innerHTML = '';
+        $('sin').value = bc; setMode('shelf');
+        if (k.j.status !== 'shelf') showAlready(k.j); else await fromShelf();
+        return;
+      }
+    }
     const r = await api('catalog/lookup?' + p.toString());
     if (!r.ok) throw new Error(r.j.error || 'HTTP ' + r.status);
     LRES = r.j.results || [];
@@ -395,7 +405,8 @@ async function fromShelf() {
     if (linked.ok && (linked.j || []).length) { showAlready(linked.j[0], it); return; }
     const kind = it.kind === 'cd' || it.kind === 'vinyl' || it.kind === 'cassette' || it.kind === 'book' || it.kind === 'game' ? it.kind
       : it.kind === 'dvd' ? 'dvd' : 'other';
-    setForm({ kind, title: it.title || '', creator: it.creator || '', year: it.year || '', publisher: '', catno: '', format: '', country: '' });
+    setForm({ kind, title: it.title || '', creator: it.creator || '', year: it.year || '', publisher: it.publisher || '',
+              catno: it.catno || '', format: it.format || '', country: it.country || '' });   // catno etc.: Shelf's music release data
     ORIGIN = { source: 'shelf', shelf_id: it.shelf_id, shelf_url: it.url, shelf_location: it.location };
     drawOrigin();
     FORMCODE = codeWidget($('fcode'), code ? { fixed: code } : {});

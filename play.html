@@ -56,6 +56,7 @@
   </div>
   <div id="status"></div>
   <div id="shelfline" class="m"></div>
+  <div id="shelfonly" class="card" style="display:none"></div>
 
   <div id="nowcard" class="card" style="display:none">
     <div class="now"><div><div class="t" id="nt"></div><div class="m" id="na"></div><div class="m" id="nc"></div></div></div>
@@ -88,6 +89,7 @@
   <ul id="hist"></ul>
 </main>
 
+<script src="media-ui.js"></script>
 <script>
 const LMS = '/lms/jsonrpc.js', API = '/cdcheck-api/';
 const $ = id => document.getElementById(id);
@@ -204,14 +206,20 @@ async function playCode(raw) {
   if (busy || (code === lastCode && Date.now() - lastAt < 6000)) return;      // same CD still in view
   busy = true; lastCode = code; lastAt = Date.now();
   try {
-    status('Looking up ' + code + '…'); $('shelfline').textContent = '';
+    status('Looking up ' + code + '…'); $('shelfline').textContent = ''; $('shelfonly').style.display = 'none';
     const r = await fetch(API + 'items/' + code, { cache:'no-store' });
     if (r.status === 404) { status(code + ': not paired with an album yet. Pair it in Check.', 'bad'); addHist('✗', code, 'not paired'); return; }
     if (!r.ok) throw new Error('save service HTTP ' + r.status);
     const rec = await r.json();
     shelfLine(code, rec);                                // where it lives (Shelf); in the background, never delays playback
     const sys = rec.play && rec.play.system;
-    if (rec.status === 'shelf') { status('In Shelf, not playable: ' + (rec.title || code) + (rec.kind ? ' (' + rec.kind + ')' : ''), 'bad'); addHist('✗', rec.title || code, 'Shelf only'); return; }
+    if (rec.status === 'shelf') {                        // catalogued directly in Shelf: nothing to play, but it can be added
+      status('In Shelf, not playable: ' + (rec.title || code) + (rec.kind ? ' (' + rec.kind + ')' : ''), 'bad'); addHist('✗', rec.title || code, 'Shelf only');
+      $('shelfline').textContent = ''; $('shelfonly').style.display = '';
+      MediaUI.shelfOnly($('shelfonly'), rec, { onAdded: j => status('Added ' + j.code + ' to Media tools. Pair it with an album or film in Check to play it.', 'ok'),
+        onShow: c => { lastAt = 0; playCode(c); } });
+      return;
+    }
     if (sys === 'jellyfin') { await playFilm(code, rec); return; }
     if (rec.kind && rec.kind !== 'cd') { status('Catalogued, not playable: ' + (rec.title || code) + ' (' + rec.kind + ')', 'bad'); addHist('✗', (rec.title || code) + ' (' + rec.kind + ')', 'not playable'); return; }
     if (!PLAYER) { status('Choose a player first.', 'bad'); return; }

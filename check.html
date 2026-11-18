@@ -32,7 +32,7 @@
   button:disabled { opacity:.45; }
   .card { background:var(--card); border-radius:10px; padding:12px; margin:10px 0; }
   .badge { display:inline-block; padding:2px 8px; border-radius:99px; font-weight:600; font-size:.85rem; color:#fff; }
-  .have { background:var(--ok); } .rip { background:var(--rip); } .miss { background:var(--no); } .maybe { background:var(--warn); } .unk { background:var(--unk); }
+  .have { background:var(--ok); } .rip { background:var(--rip); } .miss { background:var(--no); } .maybe { background:var(--warn); } .unk { background:var(--unk); } .badge.shelf { background:var(--acc); }
   .t { font-weight:600; } .m { color:var(--mut); font-size:.85rem; word-break:break-all; }
   .status { color:var(--mut); font-size:.9rem; min-height:1.3em; }
   .status.bad { color:var(--no); } .status.ok { color:var(--ok); }
@@ -359,10 +359,20 @@ function renderPick(code, w, hits, rips = []) {
       <button type="button" class="opt none" role="radio" aria-checked="false" data-i="none">None of these — not in my library</button></div>
     <div class="btnrow"><button type="button" id="save" disabled>Save</button>${ripc.length ? '<button type="button" id="imp" disabled>Save + import</button>' : ''}</div></div>`;
 }
+// A code Media tools has no record for, but Shelf knows: show it, offer "Add to Media tools" (a linked record), then
+// check again. A CD can also be looked for in the library right away (pairing it keeps the Shelf link once added).
+function renderShelfOnly(code, sh) {
+  $('out').innerHTML = `<div class="card"><span class="badge shelf">In Shelf only</span><div id="cshonly"></div>
+    ${sh.kind === 'cd' ? '<div class="btnrow"><button type="button" class="sec" id="cdlook">Look for it in the library</button></div>' : ''}</div>`;
+  MediaUI.shelfOnly($('cshonly'), sh, { onAdded: () => setTimeout(() => checkBarcode(code), 400), onShow: c => { $('code').value = c; checkBarcode(c); } });
+  if ($('cdlook')) $('cdlook').onclick = () => checkBarcode(code, true);
+}
 function renderConfirmed(code, rec) {
-  const none = rec.status === 'none', rip = rec.status === 'ripped', imp = rec.status === 'imported';
+  const none = rec.status === 'none', rip = rec.status === 'ripped', imp = rec.status === 'imported', cat = rec.status === 'catalog';
+  const kind = rec.kind || 'cd';
   const [bc, bt] = none ? ['miss', 'Marked not in library'] : rip ? ['rip', 'Ripped, waiting to import']
-                 : imp ? ['have', rec.album_id ? 'Imported' : 'Imported, Lyrion is rescanning'] : ['have', 'Confirmed'];
+                 : imp ? ['have', rec.album_id ? 'Imported' : 'Imported, Lyrion is rescanning']
+                 : cat ? ['shelf', kind === 'cd' ? 'Catalogued, no library album linked' : 'Catalogued (' + kind + ')'] : ['have', 'Confirmed'];
   $('out').innerHTML = `<div class="card"><span class="badge ${bc}">${bt}</span>
     ${none ? '' : `<div class="t">${esc(rec.album)}</div><div class="m">${esc(rec.artist)}</div><div class="m">${esc(rip ? rec.arm_folder : rec.folder)}</div>`}
     <div class="m" style="margin-top:6px">${esc(rec.mb_title)} ${rec.mb_artist ? '— ' + esc(rec.mb_artist) : ''} · saved ${esc((rec.saved || '').slice(0, 10))}</div>
@@ -411,7 +421,7 @@ try { HIST = JSON.parse(sessionStorage.getItem('cdcheck') || '[]'); } catch {}
 function saveHist() { try { sessionStorage.setItem('cdcheck', JSON.stringify(HIST)); } catch {} drawHist(); }
 function drawHist() {
   $('hist').innerHTML = HIST.slice().reverse().map(h =>
-    `<li><span class="badge ${h.kind}">${h.kind === 'have' ? 'have' : h.kind === 'rip' ? 'ripped' : h.kind === 'maybe' ? '?' : 'missing'}</span>
+    `<li><span class="badge ${h.kind}">${h.kind === 'have' ? 'have' : h.kind === 'rip' ? 'ripped' : h.kind === 'maybe' ? '?' : h.kind === 'shelf' ? 'Shelf' : 'missing'}</span>
      ${esc(h.title)} <span class="m">— ${esc(h.artist)} ${esc(h.code || '')}</span></li>`).join('');
 }
 function addHist(w, hits, code, isRip) {
@@ -420,7 +430,7 @@ function addHist(w, hits, code, isRip) {
 }
 $('clear').onclick = () => { HIST = []; saveHist(); };
 $('copy').onclick = async () => {
-  const t = HIST.filter(h => h.kind !== 'have' && h.kind !== 'rip').map(h => `${h.artist} - ${h.title} (${h.code || ''})`).join('\n');
+  const t = HIST.filter(h => h.kind !== 'have' && h.kind !== 'rip' && h.kind !== 'shelf').map(h => `${h.artist} - ${h.title} (${h.code || ''})`).join('\n');
   try { await navigator.clipboard.writeText(t); status('Copied.'); } catch { status(t || 'Nothing missing.'); }
 };
 
@@ -440,6 +450,16 @@ async function checkBarcode(code, force = false) {
         HIST.push({ title: stored.album || stored.mb_title || code, artist: stored.artist || '', kind: stored.status === 'none' ? 'miss' : stored.status === 'ripped' ? 'rip' : 'have', code }); saveHist();
         status('Barcode ' + code + ' (saved pairing)'); return;
       }
+      // not in Media tools: maybe it was catalogued directly in Shelf (its CV- label, the sleeve barcode, …)
+      status('Asking Shelf about ' + code + '…');
+      const sh = await MediaUI.lookupShelfOnly(code);
+      if (sh && sh.shelf_id != null) {
+        if (MediaUI.FILM_KINDS.includes(sh.kind) && CHECK.toTab('dvd', code, (sh.title || code) + ' is a ' + sh.kind + ' in Shelf: showing it on the DVD tab.')) return;
+        renderShelfOnly(code, sh);
+        HIST.push({ title: sh.title || code, artist: sh.creator || '', kind: 'shelf', code }); saveHist();
+        status('Barcode ' + code + ': in Shelf, not in Media tools yet.'); return;
+      }
+      if (sh && sh.shelf_error) $('cdnote').textContent = 'Shelf did not answer (' + sh.shelf_error + '); checked MusicBrainz and the library only.';
     }
     status('Looking up ' + code + ' on MusicBrainz' + (isUPC(code) ? '' : ' (catalog number)') + '…');
     const wants = await mbLookup(code);
@@ -527,7 +547,21 @@ async function check(raw) {
   try {
     status('Checking ' + code + '…');
     const { ok, status: st, j } = await api('video/check/' + encodeURIComponent(code));
-    if (st === 404) { $('dout').innerHTML = ''; status(code + ': ' + (j.error || 'unknown barcode') + '. Nothing is catalogued under this code.', 'bad'); return; }
+    if (st === 404) {
+      $('dout').innerHTML = '';
+      status('Asking Shelf about ' + code + '…');
+      const sh = await MediaUI.lookupShelfOnly(code);      // catalogued directly in Shelf?
+      if (sh && sh.shelf_id != null) {
+        if (['cd', 'vinyl', 'cassette'].includes(sh.kind) && CHECK.toTab('cd', code, (sh.title || code) + ' is a ' + sh.kind + ' in Shelf: showing it on the CD tab.')) return;
+        $('dout').innerHTML = `<div class="card"><span class="badge shelf">In Shelf only</span><div id="dshonly"></div></div>`;
+        MediaUI.shelfOnly($('dshonly'), sh, { onAdded: () => setTimeout(() => check(code), 400), onShow: c => check(c) });
+        status(code + ': in Shelf, not in Media tools yet.');
+        return;
+      }
+      status(code + ': ' + (j.error || 'unknown barcode') + '. Nothing is catalogued under this code' +
+             (sh && sh.shelf_error ? ' (Shelf did not answer: ' + sh.shelf_error + ').' : ', here or in Shelf.'), 'bad');
+      return;
+    }
     if (!ok) throw new Error(j.error || 'HTTP ' + st);
     const rec = j.record || {};
     if (j.kind === 'cd' && j.record && CHECK.toTab('cd', code, (rec.title || code) + ' is a CD: showing it on the CD tab.')) return;

@@ -281,5 +281,44 @@
     return { stop: () => cam.stop() };
   }
 
-  window.MediaUI = { esc, canon, fmtSize, FILM_KINDS, scanner, tabs, api, filmLink, unlinkFilm, libraryHint, linkFilmAfterSave, shelfLine, shelfLink, SHELF_BASE };
+  // shelfOnly(host, it, { onAdded(record), onShow(code) }): a code Media tools has no record for but Shelf knows
+  // (GET /items/<code> answered status "shelf"). Shows "In Shelf: <title> — <creator> · <location> · item #N ↗" and an
+  // "Add to Media tools" button: POST /items {code, shelf_id, source:"shelf", kind, title, creator, year, catno, publisher,
+  // country, format} makes the linked record (no new Shelf item; the push only puts the code on that item if needed).
+  // When Media tools already has that Shelf item under other codes (it.linked_codes), offers those first.
+  function shelfOnly(host, it, opt = {}) {
+    const sid = it.shelf_id, linked = (it.linked_codes || []).filter(c => c !== it.code);
+    const href = it.url || SHELF_BASE + '/item/' + encodeURIComponent(sid);
+    const extra = [it.kind, it.year, it.catno && 'cat. ' + it.catno, it.publisher].filter(Boolean);
+    host.innerHTML = `<div class="mui-box"><div>In Shelf: <b>${esc(it.title)}</b>${it.creator ? ' — ' + esc(it.creator) : ''} · ${esc(it.location || 'no location')}
+        · <a target="_blank" rel="noopener" href="${esc(href)}">item #${esc(sid)} ↗</a></div>
+      ${extra.length ? `<div class="m">${esc(extra.join(' · '))}</div>` : ''}
+      ${linked.length ? `<div class="mui-note">Media tools already has this Shelf item as <b>${linked.map(esc).join(', ')}</b>.</div>` : '<div class="m">Not in Media tools yet.</div>'}
+      <div class="mui-row">${linked.map(c => `<button class="sec sm" type="button" data-show="${esc(c)}">Show ${esc(c)}</button>`).join('')}
+        <button class="sm${linked.length ? ' sec' : ''}" type="button" data-add>${linked.length ? 'Add ' + esc(it.code) + ' too' : 'Add to Media tools'}</button></div>
+      <div data-res></div></div>`;
+    host.querySelectorAll('[data-show]').forEach(b => { b.onclick = () => opt.onShow && opt.onShow(b.dataset.show); });
+    const add = host.querySelector('[data-add]'), res = host.querySelector('[data-res]');
+    add.onclick = async () => {
+      const body = { code: it.code, kind: it.kind || 'other', title: it.title, shelf_id: sid, source: 'shelf' };
+      for (const k of ['creator', 'catno', 'publisher', 'country', 'format']) if (it[k]) body[k] = String(it[k]);
+      if (it.year) body.year = it.year;
+      if (linked.length) body.allow_duplicate = true;           // another code (disc, sleeve) for the same Shelf item
+      add.disabled = true; res.innerHTML = '<div class="m">Adding…</div>';
+      const r = await api('items', 'POST', body).catch(e => ({ ok: false, j: { error: e.message } }));
+      if (!r.ok) { add.disabled = false; res.innerHTML = `<div class="mui-bad">${esc(r.j.error || 'HTTP ' + r.status)}</div>`; return; }
+      res.innerHTML = `<div class="mui-ok">Added as ${esc(r.j.code)}, linked to Shelf item #${esc(sid)}.</div>`;
+      opt.onAdded && opt.onAdded(r.j);
+    };
+    return host;
+  }
+  // lookupShelfOnly(code) -> the shelf-only item (GET /items fall-through), {shelf_error} when Shelf failed, else null
+  async function lookupShelfOnly(code) {
+    const r = await api('items/' + encodeURIComponent(code)).catch(() => ({ ok: false, j: {} }));
+    if (r.ok && r.j.status === 'shelf') return r.j;
+    return r.j && r.j.shelf_error ? { shelf_error: r.j.shelf_error } : null;
+  }
+
+  window.MediaUI = { esc, canon, fmtSize, FILM_KINDS, scanner, tabs, api, filmLink, unlinkFilm, libraryHint, linkFilmAfterSave, shelfLine, shelfLink,
+                     shelfOnly, lookupShelfOnly, SHELF_BASE };
 })();
