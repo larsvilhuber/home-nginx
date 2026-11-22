@@ -225,6 +225,9 @@ async function playCode(raw) {
     if (!PLAYER) { status('Choose a player first.', 'bad'); return; }
     rec.album_id = sys === 'lyrion' ? rec.play.id : null; rec.album = rec.title; rec.artist = rec.creator;
     if (rec.album_id == null) { status(code + ': ' + (rec.status === 'none' ? 'marked as not in the library.' : 'no library album yet (still rescanning?).'), 'bad'); addHist('✗', code, rec.status || 'no album'); return; }
+    // A rescan (folder renamed, mp3 replaced by FLAC) gives the album a new id; Lyrion crashes on an unknown album_id and nginx answers 502
+    const known = await rpc('', ['albums', 0, 1, 'album_id:' + rec.album_id]);
+    if (!known || !known.count) { status(code + ': library album ' + rec.album_id + ' no longer exists (rescanned?). Re-pair it in Check.', 'bad'); addHist('✗', (rec.album || code), 'stale album'); return; }
     await rpc(PLAYER, ['power', 1]);
     await rpc(PLAYER, ['playlistcontrol', 'cmd:load', 'album_id:' + rec.album_id]);
     status('Playing: ' + (rec.album || code), 'ok');
