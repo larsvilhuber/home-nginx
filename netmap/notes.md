@@ -45,6 +45,17 @@
 - **BirdNET Pi** (`192.168.1.23`): on wifi (Unifi-Maison). Its ethernet port is a private point-to-point link: the Pi is `192.168.2.1` and the wifi microphone `192.168.2.14`. Because of that, `192.168.2.1` can appear to answer on the LAN through the Pi's wifi.
 - **hibou** has a second interface: USB wifi `hibou-wifi` (`192.168.1.24`), on eero Basement.
 
+## Planned (when the UniFi PoE switch replaces the roof TRENDnet)
+
+- **Roof switch:** a UniFi PoE switch in place of the TRENDnet on Dell g6. That brings gigabit to the roof, makes both APs appear in UniFi's topology, and gives per-port VLANs.
+- **Move the Reolink devices to IoT (VLAN 10)**, all together so the hub sees every camera on one network:
+  - reolink-camera: change its wifi network to IoT-wifi in the Reolink app.
+  - reolink-hub (now on Flex port 4, not its final location): set its port's Native VLAN to IoT in UniFi.
+  - reolink-exterieur (now on Dell g2, not its final location): its Dell port needs VLAN 10 untagged with PVID 10, or set the VLAN on a UniFi port if it moves there.
+  - reolink-entree (behind the roof switch): set its port to IoT on the new UniFi switch.
+  - Then: re-add the cameras in the hub over the LAN (its own wifi is no longer needed for them), add DHCP reservations for `192.168.10.x` on pfSense, and update Home Assistant's Reolink integration and go2rtc with the new addresses.
+- **Indoor IoT coverage** (robovac etc. now reach the outside APs): a small indoor UniFi AP on a Dell port with VLAN 10 tagged. Don't reuse the IoT-wifi name on the eeros: they can't tag VLAN 10, and devices would roam between two different networks.
+
 ## How this map is built
 
 See the **Implementation** tab (`netmap/README.md` in the [home-nginx repository](https://github.com/larsvilhuber/home-nginx)).
