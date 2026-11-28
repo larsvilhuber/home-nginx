@@ -35,6 +35,9 @@ SWITCH_NAME = "Dell PowerConnect 2816"
 NPORTS = 16
 LAN = ipaddress.ip_network("192.168.1.0/24")
 IFACE = "eno1"
+INVENTORY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dell-2816-ports.json")
+HA_URL = "http://127.0.0.1:8123"
+HA_TOKEN = os.path.expanduser("~/.config/netmap/ha.token")  # long-lived token of HA user "claude"
 PASSFILE = os.path.expanduser("~/.config/netmap/dell-2816.pass")
 STATEFILE = os.path.expanduser("~/.cache/netmap/dell-2816-counters.json")
 OUI_FILES = ["/usr/share/ieee-data/oui.txt", "/var/lib/ieee-data/oui.txt"]
@@ -131,7 +134,8 @@ def own_macs():
         if ipaddress.ip_address(ip) in LAN:
             try:
                 with open(f"/sys/class/net/{dev}/address") as f:
-                    res[f.read().strip()] = ip
+                    mac = f.read().strip()
+                res[mac] = ip
             except OSError:
                 pass
     return res
@@ -197,9 +201,9 @@ def rates(ports):
     return out, dt
 
 
-def device_html(mac, mac2ip, names, oui):
+def device_html(mac, mac2ip, names, oui, eero):
     ip = mac2ip.get(mac)
-    name = names.get(ip) if ip else None
+    name = names.get(ip) if ip else None  # names come only from DHCP (pfSense) via DNS
     label = html.escape(name.split(".")[0]) if name else (html.escape(ip) if ip else "<em>unknown</em>")
     bits = []
     if ip:
@@ -217,8 +221,58 @@ def gateway_mac(mac2ip):
     return next((mac for mac, ip in mac2ip.items() if m and ip == m.group(1)), None)
 
 
-def render(ports, rate, dt, mac2ip, names, oui):
+def eero_clients():
+    """MAC -> {node, type} from the eero integration's device trackers in Home Assistant.
+
+    eero has no local API; the HA integration (schmittx/home-assistant-eero) polls eero's cloud.
+    Returns {} if the token is missing or HA is unreachable, so the map still builds."""
+    try:
+        with open(HA_TOKEN) as f:
+            token = f.read().strip()
+        req = urllib.request.Request(f"{HA_URL}/api/states", headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            states = json.load(r)
+    except (OSError, ValueError) as e:
+        print(f"eero data from Home Assistant unavailable: {e}", file=sys.stderr)
+        return {}
+    out = {}
+    for st in states:
+        a = st.get("attributes", {})
+        if st["entity_id"].startswith("device_tracker.") and a.get("network_name") and a.get("mac") \
+                and st.get("state") == "home":
+            out[a["mac"].lower()] = {"node": a.get("connected_to") or "?",
+                                     "type": a.get("connection_type") or ""}
+    return out
+
+
+def load_inventory():
+    try:
+        with open(INVENTORY) as f:
+            return json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"inventory {INVENTORY}: {e}", file=sys.stderr)
+        return {}
+
+
+def device_list(macs, mac2ip, names, oui, eero):
+    """Devices on a port, grouped by the eero they reach the port through (if any)."""
+    groups = {}
+    for m in macs:
+        e = eero.get(m)
+        key = f"via eero {e['node']} ({e['type']})" if e else ""
+        groups.setdefault(key, []).append(device_html(m, mac2ip, names, oui, eero))
+    if list(groups) == [""]:
+        return f"<ul>{''.join(groups[''])}</ul>"
+    parts = [f'<div class="grp">{html.escape(k)}</div><ul>{"".join(v)}</ul>'
+             for k, v in sorted(groups.items()) if k]
+    if "" in groups:
+        parts.append(f'<div class="grp">wired, or not known to eero</div><ul>{"".join(groups[""])}</ul>')
+    return "".join(parts)
+
+
+def render(ports, rate, dt, mac2ip, names, oui, eero):
     gw = gateway_mac(mac2ip)
+    inventory = load_inventory()
     rows = []
     for p in range(1, NPORTS + 1):
         i = ports[p]
@@ -227,14 +281,23 @@ def render(ports, rate, dt, mac2ip, names, oui):
         else:
             link = '<span class="down">○</span> no link'
         r = human_rate(rate[p]) if p in rate else "–"
-        devs = [device_html(m, mac2ip, names, oui) for m in i["macs"]]
+        devs = i["macs"]
+        listing = device_list(devs, mac2ip, names, oui, eero)
         if len(devs) >= GROUP_MIN_MACS:
-            cell = (f"<details><summary>{len(devs)} devices, behind another switch or access point"
-                    f"</summary><ul>{''.join(devs)}</ul></details>")
+            nodes = sorted({eero[m]["node"] for m in devs if m in eero})
+            where = f"mostly via eero {' / '.join(nodes)}" if nodes else "behind another switch or access point"
+            cell = f"<details><summary>{len(devs)} devices, {html.escape(where)}</summary>{listing}</details>"
         elif devs:
-            cell = f"<ul>{''.join(devs)}</ul>"
+            cell = listing
         else:
             cell = '<span class="dim">–</span>' if not i["up"] else '<span class="dim">link, no traffic seen</span>'
+        inv = inventory.get(str(p))
+        if inv:
+            box = f'<div class="inv"><strong>{html.escape(inv.get("device", ""))}</strong>'
+            for k in ("detail", "note"):
+                if inv.get(k):
+                    box += f'<div class="{k}">{html.escape(inv[k])}</div>'
+            cell = box + "</div>" + cell
         alias = f'<div class="dim">{html.escape(i["alias"])}</div>' if i["alias"] else ""
         if gw in i["macs"]:
             alias += '<div class="tag">router side</div>'
@@ -259,6 +322,10 @@ def render(ports, rate, dt, mac2ip, names, oui):
  ul {{ margin: 0; padding-left: 1.1em; }}
  .dim {{ color: #666; font-size: .88em; font-weight: normal; }}
  .tag {{ display: inline-block; font-size: .75em; font-weight: normal; background: #e6f0ff; color: #2456a6; border-radius: .3em; padding: 0 .35em; }}
+ .inv {{ background: #f6f6f0; border-left: 3px solid #c9b458; padding: .2em .5em; margin-bottom: .4em; }}
+ .inv .detail {{ font-size: .88em; }}
+ .inv .note {{ font-size: .88em; color: #8a5a00; }}
+ .grp {{ font-size: .85em; color: #2456a6; margin-top: .3em; }}
  .up {{ color: #1a8f3c; }} .down {{ color: #999; }}
  tr.off {{ color: #888; }}
  code {{ font-size: .95em; }}
@@ -274,7 +341,9 @@ def render(ports, rate, dt, mac2ip, names, oui):
 {chr(10).join(rows)}
 </tbody></table>
 <p class="dim">Devices come from the switch's MAC address table; names and IPs from hibou's ARP table and DNS.
-Port descriptions shown under the port number can be set in the switch UI (Ports → Port Configuration → Description).</p>
+Port descriptions shown under the port number can be set in the switch UI (Ports → Port Configuration → Description).
+"via eero …" groups come from the eero integration in Home Assistant.
+Boxed entries are hand-kept inventory from <code>/home/www/netmap/dell-2816-ports.json</code>.</p>
 </body></html>
 """
 
@@ -300,7 +369,7 @@ def main():
     names = rdns(seen_ips)
     rate, dt = rates(ports)
 
-    page = render(ports, rate, dt, mac2ip, names, load_oui())
+    page = render(ports, rate, dt, mac2ip, names, load_oui(), eero_clients())
     tmp = a.out + ".tmp"
     with open(tmp, "w") as f:
         f.write(page)

@@ -1,0 +1,8 @@
+{
+  "_comment": "Hand-maintained inventory for the Dell 2816 port map: what is physically on each port, beyond what the MAC table shows. Keys are port numbers (g1..g16).",
+  "6": {
+    "device": "TRENDnet TPE-S50 roof PoE switch",
+    "detail": "6 ports, all 10/100 (4 PoE+, 60 W budget). Feeds roof cameras, sauna-temp and unifi-bateau (100 m PoE run).",
+    "note": "Its 10/100 ports cap this link at 100 Mb/s. Cable test 2026-11-27: \"open\" at ~14 m = the pairs a 10/100 port leaves unused, not a broken cable."
+  }
+}
