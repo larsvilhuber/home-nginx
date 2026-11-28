@@ -53,12 +53,14 @@
   .ready { font-weight:700; color:var(--ok); }
   .linkbox { border:2px solid var(--ok); }
   a { color:var(--acc); }
-  html.embed h1, html.embed .sub { display:none; }
+  html.embed h1, html.embed .sub, html.embed .hibou-home { display:none; }
+  .hibou-home { font-size:.85em; margin:.3em 0 0; }
 </style>
 <script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
 </head>
 <body>
 <main>
+  <div class="hibou-home"><a href="/">← Hibou</a></div>
   <h1>Cataloguer</h1>
   <div class="sub">Catalogue something you own that has nothing to play (vinyl, cassettes, films on tape, …): look it up, give it a code (its own barcode, or an LV label), and it goes to Shelf with its location.</div>
   <div id="status"></div>

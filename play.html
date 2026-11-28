@@ -29,12 +29,14 @@
   .transport button { flex:1; }
   ul { list-style:none; padding:0; margin:0; } li { padding:6px 0; border-top:1px solid #8884; font-size:.9rem; }
   li:first-child { border-top:0; }
-  html.embed h1, html.embed .sub { display:none; }
+  html.embed h1, html.embed .sub, html.embed .hibou-home { display:none; }
+  .hibou-home { font-size:.85em; margin:.3em 0 0; }
 </style>
 <script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
 </head>
 <body>
 <main>
+  <div class="hibou-home"><a href="/">← Hibou</a></div>
   <h1>Play</h1>
   <div class="sub">Pick a player once, then scan a CD's barcode to play it (films play on a Jellyfin device). Pair new barcodes in <a href="check.html?tab=cd" target="_top" data-hub="check/cd">Check</a>.</div>
 

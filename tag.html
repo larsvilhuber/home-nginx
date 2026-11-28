@@ -53,7 +53,8 @@
   .ready { font-weight:700; color:var(--ok); }
   pre { white-space:pre-wrap; word-break:break-word; font-size:.8rem; background:var(--bg); padding:8px; border-radius:8px; max-height:220px; overflow:auto; }
   label.chk { font-size:.9rem; color:var(--mut); display:flex; gap:6px; align-items:center; }
-  html.embed h1, html.embed .sub { display:none; }
+  html.embed h1, html.embed .sub, html.embed .hibou-home { display:none; }
+  .hibou-home { font-size:.85em; margin:.3em 0 0; }
   /* CD | DVD tabs */
   .ptabs { display:flex; gap:6px; margin:0 0 12px; border-bottom:1px solid #8884; }
   .ptabs button { flex:1; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 12px; font:inherit; font-weight:600;
@@ -65,6 +66,7 @@
 </head>
 <body>
 <main>
+  <div class="hibou-home"><a href="/">← Hibou</a></div>
   <h1>Tag</h1>
   <div class="sub">Give CDs and films a code, import ripped DVDs, and print the labels in batches.</div>
   <div class="ptabs" role="tablist" aria-label="Medium">

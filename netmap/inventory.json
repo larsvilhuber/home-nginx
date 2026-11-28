@@ -1,16 +1,17 @@
 {
-  "_comment": "Hand-maintained inventory for the network map: what the automatic sources cannot know. 'ports' = what is physically on a Dell 2816 port (g1..g16); 'devices' = model and notes for a device, keyed by MAC (lower case). Names are NOT set here: they come only from DHCP (pfSense) via DNS.",
+  "_comment": "Hand-maintained inventory for the network map: what the automatic sources cannot know. 'ports' = what is physically on a Dell 2816 port (g1..g16); 'devices' = model and notes for a device, keyed by MAC (lower case); 'uplink' = MAC of the switch it is plugged into (and 'port' on that switch), where no automatic source says so. Names are NOT set here: they come only from DHCP (pfSense) via DNS.",
   "ports": {
     "6": {
       "device": "TRENDnet TPE-S50 roof PoE switch",
       "detail": "6 ports, all 10/100 (4 PoE+, 60 W budget). Feeds roof cameras and both UniFi access points (unifi-bateau over a 100 m PoE run).",
-      "note": "Its 10/100 ports cap this link at 100 Mb/s, shared by everything on both UniFi APs. Cable test 2026-11-27: \"open\" at ~14 m = the pairs a 10/100 port leaves unused, not a broken cable."
+      "note": "Its 10/100 ports cap this link at 100 Mb/s, shared by everything on both UniFi APs. Cable test 2026-11-27: \"open\" at ~14 m = the pairs a 10/100 port leaves unused, not a broken cable. It also passes LLDP through, so each UniFi AP reports the other as its \"uplink\" (cosmetic: both are wired, meshing is off)."
     }
   },
   "devices": {
     "f4:92:bf:29:24:30": {"model": "UniFi UAP-AC-Mesh", "detail": "Wi-Fi 5, 2x2: 867 Mb/s at 5 GHz, 300 Mb/s at 2.4 GHz. \"Unifi-bateau\" in UniFi."},
     "f4:e2:c6:13:c0:0c": {"model": "UniFi UAP-AC-Mesh", "detail": "Wi-Fi 5, 2x2: 867 Mb/s at 5 GHz, 300 Mb/s at 2.4 GHz. \"Unifi-Maison\" in UniFi."},
-    "8c:ed:e1:12:69:19": {"model": "UniFi USW-Flex-2.5G-5", "detail": "5-port 2.5G switch. hibou is on its port 2 (LLDP). Home Assistant does not report which wired client is on which of its ports."},
-    "5c:26:0a:9b:e2:08": {"model": "Dell PowerConnect 2816", "detail": "16-port gigabit, web-managed, the backbone of this map."}
+    "8c:ed:e1:12:69:19": {"model": "UniFi USW-Flex-2.5G-5", "detail": "5-port 2.5G switch between the firewall and the Dell. Its ports come live from the UniFi API."},
+    "5c:26:0a:9b:e2:08": {"model": "Dell PowerConnect 2816", "detail": "16-port gigabit, web-managed. Its g16 is the uplink to the USW-Flex (port 5).", "uplink": "8c:ed:e1:12:69:19"},
+    "00:ec:ac:ce:c0:09": {"model": "pfSense firewall", "uplink": "8c:ed:e1:12:69:19"}
   }
 }

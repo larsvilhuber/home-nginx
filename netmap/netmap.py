@@ -42,9 +42,13 @@ LAN = ipaddress.ip_network("192.168.1.0/24")
 IFACE = "eno1"
 HERE = os.path.dirname(os.path.abspath(__file__))
 INVENTORY = os.path.join(HERE, "inventory.json")
+NOTES = os.path.join(HERE, "notes.md")
+README = os.path.join(HERE, "README.md")
 HA_URL = "http://127.0.0.1:8123"
 HA_TOKEN = os.path.expanduser("~/.config/netmap/ha.token")
 PASSFILE = os.path.expanduser("~/.config/netmap/dell-2816.pass")
+UNIFI_URL = "https://127.0.0.1:11443"   # UniFi OS Server (UOS) on hibou
+UNIFI_PASS = os.path.expanduser("~/.config/netmap/unifi.pass")  # one line, login:password
 STATEFILE = os.path.expanduser("~/.cache/netmap/dell-2816-counters.json")
 OUI_FILES = ["/usr/share/ieee-data/oui.txt", "/var/lib/ieee-data/oui.txt"]
 FOLD_MIN = 6  # a group with this many devices is folded behind a click
@@ -224,8 +228,33 @@ def eero_clients(states):
     return out
 
 
-def unifi_clients(states):
-    """MAC -> {ap, ssid, band, ip} for wireless clients from the UniFi Network integration."""
+def unifi_api():
+    """{'clients': stat/sta, 'devices': stat/device} from the UniFi Network API, or None."""
+    import ssl
+    try:
+        with open(UNIFI_PASS) as f:
+            user, pw = f.read().strip().split(":", 1)
+        jar = http.cookiejar.CookieJar()
+        op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar),
+                                         urllib.request.HTTPSHandler(context=ssl._create_unverified_context()))
+        op.open(urllib.request.Request(f"{UNIFI_URL}/api/auth/login",
+                                       json.dumps({"username": user, "password": pw}).encode(),
+                                       {"Content-Type": "application/json"}), timeout=15)
+        get = lambda path: json.load(op.open(f"{UNIFI_URL}/proxy/network/api/s/default/{path}", timeout=15))["data"]
+        return {"clients": get("stat/sta"), "devices": get("stat/device")}
+    except (OSError, ValueError) as e:
+        print(f"UniFi API unavailable: {e}", file=sys.stderr)
+        return None
+
+
+def unifi_clients(states, api=None):
+    """MAC -> {ap, ssid, band, ip} for wireless UniFi clients: from the UniFi API when it works,
+    else from the UniFi Network integration's device trackers in Home Assistant."""
+    if api:
+        return {c["mac"].lower(): {"ap": c["ap_mac"].lower(), "ssid": c.get("essid") or "",
+                                   "band": BAND.get(c.get("radio") or "", c.get("radio") or ""),
+                                   "ip": c.get("ip")}
+                for c in api["clients"] if not c.get("is_wired") and c.get("ap_mac") and c.get("mac")}
     out = {}
     for st in states:
         a = st.get("attributes", {})
@@ -241,8 +270,21 @@ def unifi_clients(states):
 class Net:
     """Everything known about each MAC, plus the placement rules."""
 
-    def __init__(self, ports, mac2ip, eero, unifi, inventory, oui):
+    def __init__(self, ports, mac2ip, eero, unifi, inventory, oui, api=None):
         self.ports, self.eero, self.unifi, self.oui = ports, eero, unifi, oui
+        # UniFi switches (from the API): mac -> {name, model, uplink_port, ports: {idx: {...}}}
+        self.usw, self.sw_port = {}, {}
+        for d in (api or {}).get("devices", []):
+            if d.get("type") == "usw":
+                self.usw[d["mac"].lower()] = {
+                    "name": d.get("name"), "model": d.get("model"),
+                    "uplink_port": (d.get("uplink") or {}).get("port_idx"),
+                    "ports": {pt["port_idx"]: {"up": pt.get("up"), "speed": pt.get("speed"), "name": pt.get("name"),
+                                               "poe": pt.get("poe_power")}
+                              for pt in d.get("port_table", []) if "port_idx" in pt}}
+        for c in (api or {}).get("clients", []):           # wired client -> (switch mac, port)
+            if c.get("is_wired") and c.get("sw_mac") and c.get("sw_port"):
+                self.sw_port[c["mac"].lower()] = (c["sw_mac"].lower(), c["sw_port"])
         self.inv_ports = inventory.get("ports", {})
         self.inv_dev = inventory.get("devices", {})
         self.ip = dict(mac2ip)
@@ -298,129 +340,174 @@ def esc(s):
     return html.escape(str(s))
 
 
-def dev_li(net, mac, extra=""):
-    ip, name = net.ip.get(mac), net.name(mac)
-    label = esc(name) if name else (esc(ip) if ip else "<em>unknown</em>")
-    bits = []
-    if extra:
-        bits.append(esc(extra))
-    if ip:
-        bits.append(f'<a href="http://{esc(ip)}/">{esc(ip)}</a>')
-    bits.append(f"<code>{mac}</code>")
+class Node:
+    """One thing on the map: router, switch, access point, eero, inventory box or end device."""
+
+    def __init__(self, kind, label, sub="", mac=None, ip=None, edge="", detail="", children=None):
+        self.kind, self.label, self.sub, self.mac, self.ip = kind, label, sub, mac, ip
+        self.edge, self.detail, self.children = edge, detail, children or []
+        self.y = 0.0
+
+    def leaves(self):
+        return 1 if not self.children else sum(c.leaves() for c in self.children)
+
+
+def dev_node(net, mac, kind="dev", sub=None):
+    ip = net.ip.get(mac)
     inv = net.inv_dev.get(mac, {})
-    v = inv.get("model") or net.vendor(mac)
-    if v:
-        bits.append(esc(v))
-    return f"<li><strong>{label}</strong> <span class=dim>{' · '.join(bits)}</span></li>"
+    label = net.name(mac) or ip or mac
+    if sub is None:
+        sub = inv.get("model") or net.vendor(mac)
+    return Node(kind, label, sub, mac=mac, ip=ip, detail=inv.get("detail", ""))
 
 
-def fold(title, items, cls="grp"):
-    body = f"<ul>{''.join(items)}</ul>" if items else ""
-    if len(items) >= FOLD_MIN:
-        return f'<details class="{cls}"><summary>{title} <span class=dim>({len(items)})</span></summary>{body}</details>'
-    return f'<div class="{cls}"><div class="h">{title}</div>{body}</div>'
+def sort_key(net):
+    return lambda m: (net.name(m) is None, net.name(m) or "", m)
 
 
-def node_box(net, kind, head_macs, title, clients_html):
-    head = " ".join(f"<strong>{esc(net.name(m) or net.ip.get(m) or m)}</strong>" for m in head_macs[:1])
-    sub = []
-    for m in head_macs:
-        inv = net.inv_dev.get(m, {})
-        bits = [esc(x) for x in (net.ip.get(m), inv.get("model") or net.vendor(m)) if x]
-        sub.append(f"<code>{m}</code> " + " · ".join(bits))
-    detail = next((net.inv_dev[m]["detail"] for m in head_macs if net.inv_dev.get(m, {}).get("detail")), "")
-    return (f'<div class="node {kind}"><div class="nh">{title} {head}</div>'
-            f'<div class="dim">{"<br>".join(sub)}</div>'
-            + (f'<div class="dim">{esc(detail)}</div>' if detail else "")
-            + clients_html + "</div>")
+def port_nodes(net, p, placed, skip=()):
+    """What is behind Dell port p, as a list of Nodes (wrapped in the port's inventory box if any)."""
+    macs = [m for m in net.ports[p]["macs"] if m not in skip]
+    out = []
 
+    for ap in sorted({d["ap"] for d in net.unifi.values()} & set(macs)):
+        n = dev_node(net, ap, "ap")
+        for m in sorted((m for m, d in net.unifi.items() if d["ap"] == ap), key=sort_key(net)):
+            d = net.unifi[m]
+            n.children.append(dev_node(net, m, sub=" · ".join(x for x in (d["ssid"], d["band"]) if x)))
+            placed.add(m)
+        placed.add(ap)
+        out.append(n)
 
-def port_cell(net, p, placed):
-    """Everything reachable through Dell port p, as nested boxes."""
-    i = net.ports[p]
-    left = [m for m in i["macs"]]
-    parts = []
+    units = [u for u in net.eero_units_on(p) if u not in skip]
+    for node in sorted({d["node"] for d in net.eero.values() if net.eero_node_port(d["node"]) == p}):
+        head = units[0] if units else None
+        n = dev_node(net, head, "eero") if head else Node("eero", f"eero {node}")
+        n.sub = f"eero “{node}”"
+        for m in sorted((m for m, d in net.eero.items() if d["node"] == node and m not in placed),
+                        key=sort_key(net)):
+            n.children.append(dev_node(net, m, sub=net.eero[m]["type"]))
+            placed.add(m)
+        placed.update(units)
+        out.append(n)
+
+    for m in macs:
+        if "USW" in net.inv_dev.get(m, {}).get("model", "") and m not in placed:
+            out.append(dev_node(net, m, "switch"))
+            placed.add(m)
+
+    for m in sorted(macs, key=sort_key(net)):
+        if m not in placed:
+            out.append(dev_node(net, m))
+            placed.add(m)
 
     inv = net.inv_ports.get(str(p))
     if inv:
-        box = f'<div class="inv"><strong>{esc(inv.get("device", ""))}</strong>'
-        for k in ("detail", "note"):
-            if inv.get(k):
-                box += f'<div class="{k}">{esc(inv[k])}</div>'
-        parts.append(box + "</div>")
-
-    # UniFi access points on this port, with their wireless clients (from UniFi, wherever the Dell saw them)
-    aps = sorted({d["ap"] for d in net.unifi.values()} & set(i["macs"]))
-    for ap in aps:
-        by_ssid = {}
-        for m, d in sorted(net.unifi.items(), key=lambda kv: (net.name(kv[0]) or "~", kv[0])):
-            if d["ap"] == ap:
-                by_ssid.setdefault(d["ssid"], []).append(dev_li(net, m, d["band"]))
-                placed.add(m)
-        clients = "".join(fold(f"wifi “{esc(s)}”", v) for s, v in sorted(by_ssid.items()))
-        parts.append(node_box(net, "unifi", [ap], "UniFi AP", clients or '<div class="dim">no wireless clients</div>'))
-        placed.add(ap)
-
-    # eero nodes whose clients mostly appear on this port
-    nodes = sorted({d["node"] for d in net.eero.values() if net.eero_node_port(d["node"]) == p})
-    units = net.eero_units_on(p)
-    for node in nodes:
-        groups = {}
-        for m, d in sorted(net.eero.items(), key=lambda kv: (net.name(kv[0]) or "~", kv[0])):
-            if d["node"] == node and m not in placed:
-                groups.setdefault(d["type"] or "?", []).append(dev_li(net, m))
-                placed.add(m)
-        clients = "".join(fold(esc(t), v) for t, v in sorted(groups.items()))
-        parts.append(node_box(net, "eero", units, f"eero “{esc(node)}”", clients))
-        placed.update(units)
-
-    # UniFi switches (from the inventory) on this port: a box of their own
-    for m in i["macs"]:
-        if "USW" in net.inv_dev.get(m, {}).get("model", "") and m not in placed:
-            parts.append(node_box(net, "unifi", [m], "UniFi switch", ""))
-            placed.add(m)
-
-    # whatever else the Dell saw on this port
-    rest = [dev_li(net, m) for m in sorted(left, key=lambda m: (net.name(m) or "~", m)) if m not in placed]
-    placed.update(left)
-    if rest:
-        title = "other devices on this port (directly, or behind the boxes above)" if parts else "devices on this port"
-        parts.append(fold(title, rest))
-    if not parts:
-        parts.append('<span class="dim">–</span>' if not i["up"] else '<span class="dim">link, no traffic seen</span>')
-    return "".join(parts)
+        return [Node("inv", inv.get("device", "?"), inv.get("detail", ""), detail=inv.get("note", ""),
+                     children=out)]
+    return out
 
 
-CSS = """
- body { max-width: 64em; margin: 0 auto; padding: 0 1em 2em; font-family: Tahoma, Verdana, Arial, sans-serif; line-height: 1.45; }
- h1 { font-size: 1.5em; } h2 { font-size: 1.15em; margin-top: 1.6em; }
- table { border-collapse: collapse; width: 100%; }
- th, td { text-align: left; vertical-align: top; padding: .45em .6em; border-bottom: 1px solid #ddd; }
- thead th { border-bottom: 2px solid #999; font-size: .9em; }
- tbody th { white-space: nowrap; }
- td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
- ul { margin: .1em 0 .2em; padding-left: 1.1em; }
- .dim { color: #666; font-size: .88em; font-weight: normal; }
- .tag { display: inline-block; font-size: .75em; font-weight: normal; background: #e6f0ff; color: #2456a6; border-radius: .3em; padding: 0 .35em; }
- .inv { background: #f6f6f0; border-left: 3px solid #c9b458; padding: .2em .5em; margin-bottom: .4em; }
- .inv .detail { font-size: .88em; } .inv .note { font-size: .88em; color: #8a5a00; }
- .node { border-left: 3px solid #999; padding: .2em .5em; margin: .3em 0 .5em; }
- .node.unifi { border-color: #2f7ed8; background: #f3f8fe; }
- .node.eero { border-color: #7a52c7; background: #f7f4fd; }
- .nh { font-size: .95em; }
- .grp .h, .grp summary { font-size: .85em; color: #2456a6; margin-top: .25em; }
- .up { color: #1a8f3c; } .down { color: #999; }
- tr.off { color: #888; }
- code { font-size: .95em; }
- summary { cursor: pointer; }
- .path { background: #f4f4f4; padding: .4em .7em; border-radius: .3em; }
-"""
+def port_on(net, mac, switch):
+    """'p<n>' if mac is known to be on that switch's port n (UniFi API, else inventory), else ''."""
+    sw, port = net.sw_port.get(mac, (None, None))
+    if sw == switch:
+        return f"p{port}"
+    inv = net.inv_dev.get(mac, {})
+    return f"p{inv['port']}" if inv.get("uplink") == switch and inv.get("port") else ""
 
 
-def render(net, rate, dt, gw_ip):
+def port_on_uplink(net, switch):
+    p = net.usw.get(switch, {}).get("uplink_port")
+    return f"p{p}" if p else ""
+
+
+def build(net, gw_ip):
+    """The whole network as a tree rooted at the Internet, plus each Dell port's subtree."""
     placed = set()
     gw_mac = next((m for m, ip in net.ip.items() if ip == gw_ip), None)
     gw_port = net.port_of.get(gw_mac)
+    dell_mac = next((m for m, d in net.inv_dev.items() if "PowerConnect" in d.get("model", "")), None)
+    dell = Node("switch", SWITCH_NAME, SWITCH, ip=SWITCH, mac=dell_mac, edge=f"g{gw_port}" if gw_port else "")
+    # The Dell port where the router is seen is the Dell's uplink. If the inventory says the Dell
+    # is plugged into another switch there (the USW-Flex), everything seen on that port is behind it.
+    # UniFi API (sw_port of the Dell's MAC) first, hand-kept inventory as fallback.
+    upstream = net.sw_port[dell_mac][0] if dell_mac in net.sw_port else net.inv_dev.get(dell_mac, {}).get("uplink")
+    if not (upstream and gw_port and net.port_of.get(upstream) == gw_port):
+        upstream = None
+    by_port = {}
+    for p in range(1, NPORTS + 1):
+        if net.ports[p]["macs"] and not (upstream and p == gw_port):
+            by_port[p] = port_nodes(net, p, placed, skip={gw_mac} if gw_mac else ())
+            for n in by_port[p]:
+                n.edge = f"g{p}"
+            dell.children.extend(by_port[p])
+    router = dev_node(net, gw_mac, "router", sub="firewall") if gw_mac else Node("router", "router")
+    if upstream:
+        up = dev_node(net, upstream, "switch")
+        placed.update({upstream, gw_mac})
+        beside = []
+        for m in sorted(net.ports[gw_port]["macs"], key=sort_key(net)):
+            if m in placed:
+                continue
+            n = dev_node(net, m)
+            n.edge = port_on(net, m, upstream)
+            beside.append(n)
+            placed.add(m)
+        beside.sort(key=lambda n: (int(n.edge[1:]) if n.edge[1:].isdigit() else 99, n.label))
+        flex_p = port_on(net, dell_mac, upstream)
+        dell.edge = f"{flex_p} → g{gw_port}" if flex_p else f"g{gw_port}"
+        up.edge = port_on_uplink(net, upstream)
+        up.children = [dell] + beside
+        router.children = [up]
+        by_port[gw_port] = [Node("switch", up.label, "uplink to this switch; devices behind it:",
+                                 mac=upstream, ip=up.ip, edge=f"g{gw_port}", children=beside)]
+    else:
+        router.children = [dell]
+    root = Node("cloud", "Internet", children=[router])
+
+    stray = []
+    for src in (net.eero, net.unifi):
+        for m in src:
+            if m not in placed:
+                stray.append(dev_node(net, m))
+                placed.add(m)
+    return root, by_port, stray, gw_port, len(placed)
+
+
+# --- lists (tabs) ---
+def nodes_html(nodes):
+    """Nested list for the tabs: boxes for infrastructure, bullets for end devices."""
+    out, devs = [], []
+
+    def flush():
+        if devs:
+            out.append("<ul>" + "".join(devs) + "</ul>")
+            devs.clear()
+
+    for n in nodes:
+        if n.kind == "dev":
+            bits = [f"port {esc(n.edge[1:])}"] if n.edge.startswith("p") else []
+            bits += [esc(n.sub)] if n.sub else []
+            if n.ip:
+                bits.append(f'<a href="http://{esc(n.ip)}/">{esc(n.ip)}</a>')
+            if n.mac:
+                bits.append(f"<code>{n.mac}</code>")
+            devs.append(f"<li><strong>{esc(n.label)}</strong> <span class=dim>{' · '.join(bits)}</span></li>")
+            continue
+        flush()
+        kids = nodes_html(n.children)
+        if len(n.children) >= FOLD_MIN:
+            kids = f"<details><summary>{len(n.children)} devices</summary>{kids}</details>"
+        sub = " · ".join(esc(x) for x in (n.sub, n.ip) if x)
+        detail = f'<div class="dim">{esc(n.detail)}</div>' if n.detail else ""
+        out.append(f'<div class="node {n.kind}"><div class="nh"><strong>{esc(n.label)}</strong> '
+                   f'<span class=dim>{sub}</span></div>{detail}{kids}</div>')
+    flush()
+    return "".join(out)
+
+
+def dell_tab(net, by_port, rate, dt, gw_port):
     rows = []
     for p in range(1, NPORTS + 1):
         i = net.ports[p]
@@ -430,26 +517,235 @@ def render(net, rate, dt, gw_ip):
         tags = f'<div class="dim">{esc(i["alias"])}</div>' if i["alias"] else ""
         if p == gw_port:
             tags += '<div class="tag">router side</div>'
+        what = nodes_html(by_port.get(p, [])) or (
+            '<span class="dim">link, nothing seen</span>' if i["up"] else '<span class="dim">–</span>')
         rows.append(f'<tr class="{"" if i["up"] else "off"}"><th>g{p}{tags}</th>'
-                    f"<td>{link}</td><td class=num>{r}</td><td>{port_cell(net, p, placed)}</td></tr>")
-
-    # clients known to eero/UniFi whose node or AP was not seen on any Dell port
-    stray = [dev_li(net, m, f"{d.get('node') or d.get('ap')}") for src in (net.eero, net.unifi)
-             for m, d in src.items() if m not in placed]
-    stray_html = (f"<h2>Not placed</h2><p class=dim>Known to eero or UniFi, but their node or access point "
-                  f"was not seen on the Dell.</p><ul>{''.join(stray)}</ul>") if stray else ""
-
-    gw_name = esc(net.name(gw_mac) or gw_ip or "router") if gw_mac else "router"
-    path = (f'<p class="path">Internet → <strong>{gw_name}</strong> (firewall, {esc(gw_ip)}) → '
-            f'<strong>{SWITCH_NAME}</strong> port {"g" + str(gw_port) if gw_port else "?"} → '
-            "everything below</p>")
-    nup = sum(1 for i in net.ports.values() if i["up"])
-    ncl = len(placed | set(net.eero) | set(net.unifi))
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    f"<td>{link}<div class=num>{r}</div></td><td>{what}</td></tr>")
     win = f"averaged over the last {dt / 3600:.0f} h" if rate and dt >= 3600 else (
         f"over the last {dt / 60:.0f} min" if rate else "available from the next run")
+    return (f'<p class="dim"><a href="http://{SWITCH}/">Dell login</a> · traffic = bytes received on the port, {win}.</p>'
+            '<table><thead><tr><th>Port</th><th>Link · traffic in</th><th>What is behind it</th></tr></thead>'
+            f"<tbody>{''.join(rows)}</tbody></table>")
+
+
+def find(node, mac):
+    if node.mac == mac:
+        return node
+    for c in node.children:
+        f = find(c, mac)
+        if f:
+            return f
+    return None
+
+
+def flex_tab(net, root):
+    flex = next(iter(net.usw), None) or next((m for m, d in net.inv_dev.items() if "USW" in d.get("model", "")), None)
+    node = find(root, flex) if flex else None
+    if not node:
+        return '<p class="dim">The UniFi switch was not seen.</p>'
+    head = (f'<p><strong>{esc(node.label)}</strong> ({esc(node.sub)}, {esc(node.ip or "")}) · '
+            '<a href="https://hibou:11443/">open in UniFi (UOS server)</a></p>')
+    gw = root.children[0] if root.children and root.children[0].kind == "router" else None
+    info = net.usw.get(flex)
+    if not info:                     # no UniFi API: hand-kept port numbers only
+        kids = list(node.children)
+        if gw and gw.mac:
+            kids.insert(0, Node("dev", gw.label, "firewall (uplink to the Internet)", mac=gw.mac, ip=gw.ip))
+        return head + '<p class="dim">UniFi API unavailable; port numbers are hand-kept.</p>' + nodes_html(kids)
+    rows = []
+    for idx, pt in sorted(info["ports"].items()):
+        link = (f'<span class="up">●</span> {pt["speed"] or "?"} M' if pt["up"]
+                else '<span class="down">○</span> no link')
+        if pt.get("poe"):
+            link += f'<div class="num">PoE {float(pt["poe"]):.1f} W</div>'
+        here = []
+        if idx == info["uplink_port"] and gw:
+            here.append(Node("dev", gw.label, "firewall · uplink to the Internet", mac=gw.mac, ip=gw.ip))
+        for c in node.children:
+            if c.edge.split(" ")[0] == f"p{idx}":
+                if c.kind == "switch" and c.children:
+                    here.append(Node("switch", c.label, f"its {c.edge.split()[-1]}; see the Dell tab for what is behind it",
+                                     ip=c.ip, mac=c.mac))
+                else:
+                    here.append(Node(c.kind, c.label, c.sub, mac=c.mac, ip=c.ip, detail=c.detail, children=c.children))
+        label = esc(pt["name"]) if pt.get("name") and pt["name"] != f"Port {idx}" else ""
+        rows.append(f'<tr class="{"" if pt["up"] else "off"}"><th>{idx}<div class="dim">{label}</div></th>'
+                    f'<td>{link}</td><td>{nodes_html(here) or "<span class=dim>–</span>"}</td></tr>')
+    loose = [c for c in node.children if not c.edge]
+    extra = (f'<p class="dim">Seen behind this switch, port unknown:</p>{nodes_html(loose)}' if loose else "")
+    return (head + '<table><thead><tr><th>Port</th><th>Link</th><th>What is on it</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table>' + extra)
+
+
+# --- map (desktop) ---
+COLORS = {"cloud": "#777", "router": "#444", "switch": "#2e7d32", "inv": "#b08f1e",
+          "ap": "#2f7ed8", "eero": "#7a52c7", "dev": "#999"}
+COL_W, BOX_W, ROW_H = 205, 170, 22
+
+
+def svg_map(root):
+    rows = [0]
+
+    def place(n, depth):
+        n.depth = depth
+        if not n.children:
+            n.y = rows[0]
+            rows[0] += 1
+        else:
+            for c in n.children:
+                place(c, depth + 1)
+            n.y = (n.children[0].y + n.children[-1].y) / 2
+    place(root, 0)
+
+    maxdepth = [0]
+    parts = []
+
+    def trunc(s, k):
+        s = str(s)
+        return s if len(s) <= k else s[:k - 1] + "…"
+
+    def draw(n):
+        maxdepth[0] = max(maxdepth[0], n.depth)
+        x, y = n.depth * COL_W + 4, n.y * ROW_H + 14
+        for c in n.children:
+            cx, cy = c.depth * COL_W + 4, c.y * ROW_H + 14
+            mid = x + BOX_W + (cx - x - BOX_W) / 2
+            parts.append(f'<path d="M{x + BOX_W},{y} H{mid} V{cy} H{cx}" class="ln"/>')
+            if c.edge:
+                parts.append(f'<text x="{cx - 4}" y="{cy - 3}" class="edge" text-anchor="end">{esc(c.edge)}</text>')
+            draw(c)
+        tip = " · ".join(esc(v) for v in (n.label, n.sub, n.ip, n.mac, n.detail) if v)
+        col = COLORS.get(n.kind, "#999")
+        link_open = f'<a href="http://{esc(n.ip)}/">' if n.ip else ""
+        link_close = "</a>" if n.ip else ""
+        if n.kind == "dev":
+            label = trunc(n.label, 22)
+            sub = trunc(n.sub, 26) if n.sub else ""
+            parts.append(f'<g>{link_open}<title>{tip}</title><circle cx="{x + 4}" cy="{y}" r="3" fill="{col}"/>'
+                         f'<text x="{x + 11}" y="{y + 4}" class="lbl">{esc(label)}'
+                         f'<tspan class="sub" dx="5">{esc(sub)}</tspan></text>{link_close}</g>')
+        else:
+            parts.append(f'<g>{link_open}<title>{tip}</title>'
+                         f'<rect x="{x}" y="{y - 9}" width="{BOX_W}" height="18" rx="4" fill="{col}"/>'
+                         f'<text x="{x + 6}" y="{y + 4}" class="box">{esc(trunc(n.label, 26))}</text>'
+                         f'{link_close}</g>')
+    draw(root)
+    width = (maxdepth[0] + 1) * COL_W + 200
+    height = rows[0] * ROW_H + 10
+    return (f'<svg class="map" viewBox="0 0 {width} {height}" width="{width}" height="{height}" '
+            f'xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Network map">'
+            '<style>.ln{fill:none;stroke:#bbb;stroke-width:1.2}.lbl{font:12px Tahoma,Verdana,sans-serif;fill:#222}'
+            '.sub{font-size:10.5px;fill:#888}.box{font:bold 11.5px Tahoma,Verdana,sans-serif;fill:#fff}'
+            '.edge{font:10px Tahoma,Verdana,sans-serif;fill:#2e7d32}a:hover text{text-decoration:underline}</style>'
+            + "".join(parts) + "</svg>")
+
+
+def md(text):
+    """Small Markdown subset for notes.md: ## headings, - bullets (plus "  - " sub-bullets), paragraphs,
+    **bold**, `code`, [text](url) and <url>."""
+    def inline(t):
+        t = esc(t)
+        t = re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
+        t = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", t)
+        t = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", r'<a href="\2">\1</a>', t)
+        t = re.sub(r"&lt;(https?://[^&\s]+)&gt;", r'<a href="\1">\1</a>', t)
+        return t
+    out, items, para = [], [], []
+
+    def li(item):
+        text, subs = item
+        sub = "<ul>" + "".join(f"<li>{inline(x)}</li>" for x in subs) + "</ul>" if subs else ""
+        return f"<li>{inline(text)}{sub}</li>"
+
+    def flush():
+        if items:
+            out.append("<ul>" + "".join(li(i) for i in items) + "</ul>")
+            items.clear()
+        if para:
+            out.append(f"<p>{inline(' '.join(para))}</p>")
+            para.clear()
+    for line in text.splitlines():
+        if line.startswith("## "):
+            flush()
+            out.append(f"<h2>{inline(line[3:])}</h2>")
+        elif line.startswith("- "):
+            if para:
+                flush()
+            items.append((line[2:], []))
+        elif line.startswith("  - ") and items:
+            items[-1][1].append(line[4:])
+        elif line.startswith("  ") and items:
+            if items[-1][1]:
+                items[-1][1][-1] += " " + line.strip()
+            else:
+                items[-1] = (items[-1][0] + " " + line.strip(), items[-1][1])
+        elif not line.strip():
+            flush()
+        else:
+            if items:
+                flush()
+            para.append(line.strip())
+    flush()
+    return "".join(out)
+
+
+def md_tab(path):
+    try:
+        with open(path) as f:
+            body = md(f.read())
+    except OSError:
+        return f'<p class="dim">{esc(path)} is missing.</p>'
+    rel = os.path.relpath(path, os.path.dirname(HERE))
+    return body + (f'<p class="dim">Source: <code>{esc(path)}</code> '
+                   f'(<a href="https://github.com/larsvilhuber/home-nginx/blob/main/{esc(rel)}">{esc(rel)} on GitHub</a>); '
+                   'the page picks up edits on the next run.</p>')
+
+
+CSS = """
+ body { max-width: 80em; margin: 0 auto; padding: 0 1em 2em; font-family: Tahoma, Verdana, Arial, sans-serif; line-height: 1.45; }
+ h1 { font-size: 1.5em; } h2 { font-size: 1.15em; margin-top: 1.4em; }
+ table { border-collapse: collapse; width: 100%; }
+ th, td { text-align: left; vertical-align: top; padding: .45em .6em; border-bottom: 1px solid #ddd; }
+ thead th { border-bottom: 2px solid #999; font-size: .9em; }
+ tbody th { white-space: nowrap; }
+ .num { font-size: .85em; color: #555; white-space: nowrap; font-variant-numeric: tabular-nums; }
+ ul { margin: .1em 0 .2em; padding-left: 1.1em; }
+ .dim { color: #666; font-size: .88em; font-weight: normal; }
+ .tag { display: inline-block; font-size: .75em; font-weight: normal; background: #e6f0ff; color: #2456a6; border-radius: .3em; padding: 0 .35em; }
+ .node { border-left: 3px solid #999; padding: .2em .5em; margin: .3em 0 .5em; }
+ .node.ap { border-color: #2f7ed8; background: #f3f8fe; }
+ .node.eero { border-color: #7a52c7; background: #f7f4fd; }
+ .node.inv { border-color: #c9b458; background: #f8f7ef; }
+ .node.switch { border-color: #2e7d32; background: #f2f8f2; }
+ .up { color: #1a8f3c; } .down { color: #999; }
+ tr.off { color: #888; }
+ code { font-size: .95em; }
+ summary { cursor: pointer; color: #2456a6; font-size: .9em; }
+ .mapwrap { overflow-x: auto; border: 1px solid #ddd; border-radius: .4em; padding: .5em; margin: .5em 0 1.2em; }
+ .tabs > input { position: absolute; opacity: 0; }
+ .tabs > label { display: inline-block; padding: .45em 1em; border: 1px solid #ccc; border-bottom: none;
+   border-radius: .4em .4em 0 0; cursor: pointer; background: #f4f4f4; margin-right: .2em; }
+ .tabs > input:checked + label { background: #fff; font-weight: bold; position: relative; top: 1px; }
+ .tabs > .panel { display: none; border-top: 1px solid #ccc; padding-top: .6em; }
+ #t1:checked ~ .p1, #t2:checked ~ .p2, #t3:checked ~ .p3, #t4:checked ~ .p4 { display: block; }
+ .doc h2 { font-size: 1.05em; margin: 1.1em 0 .3em; } .doc ul { padding-left: 1.3em; } .doc li { margin: .25em 0; }
+ .doc { max-width: 52em; }
+ @media (max-width: 60em) {
+   .mapwrap { display: none; }
+   th, td { padding: .4em .3em; }
+ }
+"""
+
+
+def render(net, rate, dt, gw_ip):
+    root, by_port, stray, gw_port, ncl = build(net, gw_ip)
+    stray_html = (f"<h2>Not placed</h2><p class=dim>Known to eero or UniFi, but their node or access point "
+                  f"was not seen on the Dell.</p>{nodes_html(stray)}") if stray else ""
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     srcs = ["Dell MAC table"] + (["eero (via Home Assistant)"] if net.eero else []) + \
            (["UniFi (via Home Assistant)"] if net.unifi else [])
+    flex = next((m for m, d in net.inv_dev.items() if "USW" in d.get("model", "")), None)
+    flex_label = esc(net.name(flex) or "USW-Flex") if flex else "USW-Flex"
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -458,20 +754,24 @@ def render(net, rate, dt, gw_ip):
 <style>{CSS}</style></head><body>
 <p><a href="/">← Hibou</a></p>
 <h1>Network map</h1>
-{path}
-<p>{ncl} devices · {nup} of {NPORTS} Dell ports with a link · updated {stamp} ·
-<a href="http://{SWITCH}/">Dell login</a> · <a href="https://hibou:11443/">UniFi</a></p>
-<table>
-<thead><tr><th>Dell port</th><th>Link</th><th class=num>Traffic in</th><th>What is behind it</th></tr></thead>
-<tbody>
-{chr(10).join(rows)}
-</tbody></table>
+<p>{ncl} devices · updated {stamp} · <a href="http://{SWITCH}/">Dell login</a> ·
+<a href="https://hibou:11443/">UniFi (UOS server)</a></p>
+<div class="mapwrap">{svg_map(root)}</div>
+<div class="tabs">
+<input type="radio" name="tab" id="t1" checked><label for="t1">Dell 2816</label>
+<input type="radio" name="tab" id="t2"><label for="t2">{flex_label}</label>
+<input type="radio" name="tab" id="t3"><label for="t3">Notes</label>
+<input type="radio" name="tab" id="t4"><label for="t4">Implementation</label>
+<div class="panel p1">{dell_tab(net, by_port, rate, dt, gw_port)}</div>
+<div class="panel p2">{flex_tab(net, root)}</div>
+<div class="panel p3 doc">{md_tab(NOTES)}</div>
+<div class="panel p4 doc">{md_tab(README)}</div>
+</div>
 {stray_html}
-<p class="dim">Sources: {", ".join(srcs)}; names from DHCP (pfSense) via DNS; vendors from the IEEE list.
-Traffic = bytes the Dell received on that port, {win}.
-Boxes: <span style="color:#2f7ed8">UniFi access point</span>, <span style="color:#7a52c7">eero node</span>,
-<span style="color:#8a5a00">hand-kept inventory</span> (<code>/home/www/netmap/inventory.json</code>).
-Wired clients of the USW-Flex and of the eeros are not broken down by port: neither reports that through Home Assistant.</p>
+<p class="dim">Sources: {", ".join(srcs)}; names from DHCP (pfSense) via DNS; vendors from the IEEE list;
+hand-kept inventory in <code>/home/www/netmap/inventory.json</code>. Hover a map entry for details; click to open its web page.
+Colours: <span style="color:#2e7d32">switch</span>, <span style="color:#2f7ed8">UniFi AP</span>,
+<span style="color:#7a52c7">eero</span>, <span style="color:#b08f1e">inventory</span>.</p>
 </body></html>
 """
 
@@ -493,14 +793,15 @@ def main():
     if not a.no_sweep:
         ping_sweep()
     states = ha_states()
+    api = unifi_api()
     try:
         with open(INVENTORY) as f:
             inventory = json.load(f)
     except (OSError, ValueError) as e:
         print(f"inventory {INVENTORY}: {e}", file=sys.stderr)
         inventory = {}
-    net = Net(ports, {**arp_table(), **own_macs()}, eero_clients(states), unifi_clients(states),
-              inventory, load_oui())
+    net = Net(ports, {**arp_table(), **own_macs()}, eero_clients(states), unifi_clients(states, api),
+              inventory, load_oui(), api)
     net.resolve_names()
     rate, dt = rates(ports)
 

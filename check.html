@@ -57,12 +57,14 @@
   pre { white-space:pre-wrap; word-break:break-word; font-size:.8rem; background:var(--bg); padding:8px; border-radius:8px; max-height:200px; overflow:auto; }
   .item { padding:8px 0; border-top:1px solid #8884; display:flex; gap:10px; align-items:center; cursor:pointer; }
   .item:first-child { border-top:0; } .item > div { flex:1; min-width:0; }
-  html.embed h1, html.embed .sub { display:none; }
+  html.embed h1, html.embed .sub, html.embed .hibou-home { display:none; }
+  .hibou-home { font-size:.85em; margin:.3em 0 0; }
 </style>
 <script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed');</script>
 </head>
 <body>
 <main>
+  <div class="hibou-home"><a href="/">← Hibou</a></div>
   <h1>Check</h1>
   <div class="sub">Scan a barcode or LV label: is the CD in the Lyrion library, is the film in place for Jellyfin?</div>
   <div class="ptabs" role="tablist" aria-label="Medium">
