@@ -30,7 +30,9 @@
   - A cable test on 2026-11-27 reported "open" at ~14 m. That's the wire pairs a 10/100 port leaves unused, not a fault.
 - **UniFi APs:** unifi-bateau (`.240`) and Unifi-Maison (`.241`, DNS name `unifi-outside`), both UAP-AC-Mesh. Rated 867 Mb/s at 5 GHz and 300 Mb/s at 2.4 GHz.
   - unifi-bateau sits at the end of a 100 m PoE run.
-  - Each AP shows the other as its "uplink", because the TRENDnet passes LLDP through. This is cosmetic: both are wired, and wireless meshing is off.
+  - MACs: unifi-bateau `f4:92:bf:29:24:30`, Unifi-Maison `f4:e2:c6:13:c0:0c`.
+  - Each AP shows the other as its "uplink", because the TRENDnet passes LLDP through. Both are wired and wireless meshing is off, so traffic isn't affected.
+  - Because of that loop, neither AP can be traced back to the Flex, so the APs **don't appear in UniFi's topology view**. They're still listed and working under UniFi Devices. Adding the Dell as a third-party device (MAC `5c:26:0a:9b:e2:08`) probably won't fix it.
 - **Upgrade path:** a gigabit UniFi PoE switch (e.g. USW-Lite-8-PoE) in place of the TRENDnet. It would fix both the 100 Mb/s limit and the uplink label, and the roof would appear in UniFi's topology.
 
 ## eero
